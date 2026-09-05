@@ -1,9 +1,10 @@
 /*
-    This class contains the minimal base information to 
-    derive a full chess position. 
+    This class contains the minimal base information to
+    derive a full chess position.
 */
 #pragma once
 #include <cstdint>
+#include <square.h>
 
 enum Color {
     White = 0,
@@ -41,11 +42,27 @@ struct Position {
     Color sideToMove;
     CastlingRights castlingRights;
 
-    // -1 = no en passant 
+    // -1 = no en passant
     int enPassantSquare;
-
     // Resets after non-repeatable move is played
     int halfmoveClock;
-
     int fullmoveCount;
+
+    //Turn on a square on the bitboard
+    std::uint64_t squareMask(Square square) {
+        return 1ULL << square;
+    }
+    //Check if the piece exists on the board
+    bool hasPiece(const Position& position, Color color, PieceType type, Square square){
+        return position.pieces[color][type] & squareMask(square);
+    }
+    //set a piece on the board
+    void setPiece(Position& position, Color color, PieceType type, Square square) {
+        position.pieces[color][type] |= squareMask(square);
+    }
+    //remove a piece on the board
+    void removePiece(Position& position, Color color, PieceType type, Square square) {
+        position.pieces[color][type] &= ~squareMask(square);
+    }
+
 };
