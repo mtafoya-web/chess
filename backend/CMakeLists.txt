@@ -21,7 +21,6 @@ enable_testing()
 
 add_library(chess_position STATIC
     src/position.c++
-    src/driver.c++
 )
 
 target_include_directories(chess_position PUBLIC
@@ -33,6 +32,15 @@ target_sources(chess_position PUBLIC
     include/chess/position.h
     include/chess/square.h
 )
+
+add_executable(chess_driver
+    src/driver.c++
+)
+
+target_link_libraries(chess_driver PRIVATE
+    chess_position
+)
+
 add_executable(position_test
     test/position_test.cpp
 )
