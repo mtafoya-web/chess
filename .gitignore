@@ -1,0 +1,20 @@
+.env
+.env.*
+!.env.example
+
+# Private keys and certificates
+*.pem
+*.key
+*.crt
+*.p12
+
+# Local/editor/system files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Build and dependency directories
+node_modules/
+dist/
+build/
