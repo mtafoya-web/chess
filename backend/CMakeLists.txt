@@ -19,17 +19,27 @@ FetchContent_MakeAvailable(googletest)
 
 enable_testing()
 
-add_library(chess_position INTERFACE)
-
-target_sources(chess_position INTERFACE
-    src/position.h
-    src/square.h
+add_library(chess_position STATIC
+    src/position.c++
+    src/driver.c++
 )
 
-target_include_directories(chess_position INTERFACE src)
+target_include_directories(chess_position PUBLIC
+    include
+    include/chess
+)
 
+target_sources(chess_position PUBLIC
+    include/chess/position.h
+    include/chess/square.h
+)
 add_executable(position_test
     test/position_test.cpp
+)
+
+target_include_directories(position_test PRIVATE
+    include
+    include/chess
 )
 
 target_link_libraries(position_test PRIVATE

@@ -1,0 +1,12 @@
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    working_dir: /workspace
+    volumes:
+      - .:/workspace
+    command: >
+      bash -lc "cmake -S backend -B backend/build &&
+      cmake --build backend/build --target position_test &&
+      ctest --test-dir backend/build --output-on-failure"
