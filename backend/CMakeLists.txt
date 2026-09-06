@@ -15,45 +15,74 @@ FetchContent_Declare(
 )
 
 set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
+
 FetchContent_MakeAvailable(googletest)
 
 enable_testing()
 
-add_library(chess_position STATIC
+
+# ---------------------------------------------------------
+# CHESS CORE LIBRARY
+# ---------------------------------------------------------
+
+add_library(chess_core STATIC
     src/position.c++
+    src/moveGenerator.c++
 )
 
-target_include_directories(chess_position PUBLIC
+target_include_directories(chess_core PUBLIC
     include
-    include/chess
 )
 
-target_sources(chess_position PUBLIC
+target_sources(chess_core PUBLIC
     include/chess/position.h
     include/chess/square.h
+    include/chess/move.h
+    include/chess/moveGenerator.h
 )
+
+
+# ---------------------------------------------------------
+# DRIVER
+# ---------------------------------------------------------
 
 add_executable(chess_driver
     src/driver.c++
 )
 
 target_link_libraries(chess_driver PRIVATE
-    chess_position
+    chess_core
 )
 
-add_executable(position_test
+
+# ---------------------------------------------------------
+# TESTS
+# ---------------------------------------------------------
+
+add_executable(chess_tests
     test/position_test.cpp
 )
 
-target_include_directories(position_test PRIVATE
-    include
-    include/chess
-)
-
-target_link_libraries(position_test PRIVATE
-    chess_position
+target_link_libraries(chess_tests PRIVATE
+    chess_core
     GTest::gtest_main
 )
 
+
+# ---------------------------------------------------------
+# GOOGLE TEST DISCOVERY
+# ---------------------------------------------------------
+
 include(GoogleTest)
-gtest_discover_tests(position_test)
+
+gtest_discover_tests(chess_tests)
+
+# ---------------------------------------------------------
+# CUSTOM TEST RUNNER TARGET
+# ---------------------------------------------------------
+
+add_custom_target(run_tests
+    COMMAND $<TARGET_FILE:chess_tests>
+    DEPENDS chess_tests
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+)

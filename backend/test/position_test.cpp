@@ -1,6 +1,8 @@
 #include <gtest/gtest.h>
 
 #include "chess/position.h"
+#include "chess/move.h"
+#include "chess/moveGenerator.h"
 
 TEST(PositionTest, SetsChecksAndRemovesPiece)
 {
@@ -26,7 +28,7 @@ TEST(PositionTest, KeepsDifferentPiecesSeparate)
 
 TEST(PositionTest, InitialBoardSetup)
 {
-    Position board = Position::initPosition();
+    Position board = Position::startingPosition();
 
     EXPECT_TRUE(board.hasPiece(White, Pawn, A2));
     EXPECT_TRUE(board.hasPiece(Black, Pawn, A7));
@@ -38,7 +40,7 @@ TEST(PositionTest, InitialBoardSetup)
 
 TEST(PositionTest, PieceAtReturnsExpectedTokens)
 {
-    Position board = Position::initPosition();
+    Position board = Position::startingPosition();
 
     EXPECT_EQ(board.pieceAt(A1), "WR");
     EXPECT_EQ(board.pieceAt(B1), "WN");
@@ -51,7 +53,7 @@ TEST(PositionTest, PieceAtReturnsExpectedTokens)
 
 TEST(PositionTest, PrintPiecesOutputsInitialBoard)
 {
-    Position board = Position::initPosition();
+    Position board = Position::startingPosition();
 
     testing::internal::CaptureStdout();
     board.printPieces();
@@ -69,4 +71,169 @@ TEST(PositionTest, PrintPiecesOutputsInitialBoard)
         "  a  b  c  d  e  f  g  h\n";
 
     EXPECT_EQ(output, expected);
+}
+
+TEST(MoveGeneratorTest, WhitePawnCanMoveTwoSquaresFromStartingRank)
+{
+    Position board;
+
+    // Put one white pawn on E2.
+    board.setPiece(White, Pawn, E2);
+
+    // Make sure it is White's turn.
+    board.sideToMove = White;
+
+    std::vector<Move> moves =
+        MoveGenerator::generateMoves(board);
+
+    bool foundDoubleMove = false;
+
+    for (const Move& move : moves)
+    {
+        if (
+            move.startSquare == E2 &&
+            move.stopSquare == E4
+        )
+        {
+            foundDoubleMove = true;
+        }
+    }
+
+    EXPECT_TRUE(foundDoubleMove);
+}
+
+TEST(MoveGeneratorTest, WhitePawnCannotMoveTwoSquaresFromNonStartingRank)
+{
+    Position board;
+
+    board.setPiece(White, Pawn, E3);
+    board.sideToMove = White;
+
+    std::vector<Move> moves =
+        MoveGenerator::generateMoves(board);
+
+    bool foundIllegalDoubleMove = false;
+
+    for (const Move& move : moves)
+    {
+        if (
+            move.startSquare == E3 &&
+            move.stopSquare == E5
+        )
+        {
+            foundIllegalDoubleMove = true;
+        }
+    }
+
+    EXPECT_FALSE(foundIllegalDoubleMove);
+}
+
+TEST(MoveGeneratorTest, WhitePawnCannotJumpPieceOnDoubleMove)
+{
+    Position board;
+
+    board.setPiece(White, Pawn, E2);
+
+    // Block E3.
+    board.setPiece(Black, Knight, E3);
+
+    board.sideToMove = White;
+
+    std::vector<Move> moves =
+        MoveGenerator::generateMoves(board);
+
+    bool foundDoubleMove = false;
+
+    for (const Move& move : moves)
+    {
+        if (
+            move.startSquare == E2 &&
+            move.stopSquare == E4
+        )
+        {
+            foundDoubleMove = true;
+        }
+    }
+
+    EXPECT_FALSE(foundDoubleMove);
+}
+
+TEST(MoveGeneratorTest, KnightMovesFromCenter)
+{
+    Position board;
+
+    // Put one white knight in the middle of the board.
+    board.setPiece(White, Knight, D4);
+    board.sideToMove = White;
+
+    std::vector<Move> moves =
+        MoveGenerator::generateMoves(board);
+
+    // A knight in the center should have 8 possible moves.
+    int knightMoveCount = 0;
+
+    for (const Move& move : moves)
+    {
+        if (move.piece == Knight && move.startSquare == D4)
+        {
+            knightMoveCount++;
+        }
+    }
+
+    EXPECT_EQ(knightMoveCount, 8);
+}
+
+TEST(MoveGeneratorTest, KnightMovesFromCorner)
+{
+    Position board;
+
+    board.setPiece(White, Knight, A1);
+    board.sideToMove = White;
+
+    std::vector<Move> moves =
+        MoveGenerator::generateMoves(board);
+
+    int knightMoveCount = 0;
+
+    for (const Move& move : moves)
+    {
+        if (
+            move.piece == Knight &&
+            move.startSquare == A1
+        )
+        {
+            knightMoveCount++;
+        }
+    }
+
+    EXPECT_EQ(knightMoveCount, 2);
+}
+
+TEST(MoveGeneratorTest, KnightCannotLandOnFriendlyPiece)
+{
+    Position board;
+
+    board.setPiece(White, Knight, D4);
+    board.setPiece(White, Pawn, E6);
+
+    board.sideToMove = White;
+
+    std::vector<Move> moves =
+        MoveGenerator::generateMoves(board);
+
+    bool foundBlockedMove = false;
+
+    for (const Move& move : moves)
+    {
+        if (
+            move.piece == Knight &&
+            move.startSquare == D4 &&
+            move.stopSquare == E6
+        )
+        {
+            foundBlockedMove = true;
+        }
+    }
+
+    EXPECT_FALSE(foundBlockedMove);
 }

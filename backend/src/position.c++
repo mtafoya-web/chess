@@ -29,9 +29,19 @@ void Position::printPieces() const {
     std::cout << "  a  b  c  d  e  f  g  h\n";
 }
 
-Position Position::initPosition(){
+Position Position::startingPosition(){
     //Create board
     Position board;
+
+    //All castling possible 1111
+    board.castlingRights =
+        static_cast<CastlingRights>(
+            whiteShort |
+            whiteLong |
+            blackShort |
+            blackLong
+        );
+    
 
     //White pawns
     for(int square = A2; square <= H2; square++){

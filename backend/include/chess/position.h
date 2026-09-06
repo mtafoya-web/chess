@@ -41,7 +41,7 @@ struct Position {
     std::uint64_t pieces[2][6]{};
 
     Color sideToMove = White;
-    CastlingRights castlingRights = noCastle;
+    std::uint8_t castlingRights = noCastle;
 
     // -1 = no en passant
     int enPassantSquare = -1;
@@ -49,9 +49,7 @@ struct Position {
     int halfmoveClock = 0;
     int fullmoveCount = 1;
 
-    Position() = default;
-
-    static Position initPosition();
+    static Position startingPosition();
     std::uint64_t squareMask(Square square) const;
     bool hasPiece(Color color, PieceType type, Square square) const;
     void setPiece(Color color, PieceType type, Square square);
