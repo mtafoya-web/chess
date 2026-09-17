@@ -61,6 +61,7 @@ target_link_libraries(chess_driver PRIVATE
 
 add_executable(chess_tests
     test/position_test.cpp
+    test/moveGenerator_test.cpp
 )
 
 target_link_libraries(chess_tests PRIVATE

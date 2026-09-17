@@ -1,5 +1,4 @@
 #include <gtest/gtest.h>
-
 #include "chess/position.h"
 #include "chess/move.h"
 #include "chess/moveGenerator.h"
@@ -7,35 +6,35 @@
 TEST(PositionTest, SetsChecksAndRemovesPiece)
 {
     Position board{};
-    EXPECT_FALSE(board.hasPiece(White, Knight, G1));
-    board.setPiece(White, Knight, G1);
-    EXPECT_TRUE(board.hasPiece(White, Knight, G1));
-    board.removePiece(White, Knight, G1);
-    EXPECT_FALSE(board.hasPiece(White, Knight, G1));
+    EXPECT_FALSE(board.hasPiece(Piece{White, Knight}, G1));
+    board.setPiece(Piece{White, Knight}, G1);
+    EXPECT_TRUE(board.hasPiece(Piece{White, Knight}, G1));
+    board.removePiece(Piece{White, Knight}, G1);
+    EXPECT_FALSE(board.hasPiece(Piece{White, Knight}, G1));
 }
 
 TEST(PositionTest, KeepsDifferentPiecesSeparate)
 {
     Position board{};
 
-    board.setPiece(White, Pawn, E2);
-    board.setPiece(Black, Pawn, E7);
+    board.setPiece(Piece{White, Pawn}, E2);
+    board.setPiece(Piece{Black, Pawn}, E7);
 
-    EXPECT_TRUE(board.hasPiece(White, Pawn, E2));
-    EXPECT_TRUE(board.hasPiece(Black, Pawn, E7));
-    EXPECT_FALSE(board.hasPiece(White, Pawn, E7));
+    EXPECT_TRUE(board.hasPiece(Piece{White, Pawn}, E2));
+    EXPECT_TRUE(board.hasPiece(Piece{Black, Pawn}, E7));
+    EXPECT_FALSE(board.hasPiece(Piece{White, Pawn}, E7));
 }
 
 TEST(PositionTest, InitialBoardSetup)
 {
     Position board = Position::startingPosition();
 
-    EXPECT_TRUE(board.hasPiece(White, Pawn, A2));
-    EXPECT_TRUE(board.hasPiece(Black, Pawn, A7));
-    EXPECT_TRUE(board.hasPiece(White, Rook, A1));
-    EXPECT_TRUE(board.hasPiece(White, King, E1));
-    EXPECT_TRUE(board.hasPiece(Black, King, E8));
-    EXPECT_FALSE(board.hasPiece(White, Pawn, E4));
+    EXPECT_TRUE(board.hasPiece(Piece{White, Pawn}, A2));
+    EXPECT_TRUE(board.hasPiece(Piece{Black, Pawn}, A7));
+    EXPECT_TRUE(board.hasPiece(Piece{White, Rook}, A1));
+    EXPECT_TRUE(board.hasPiece(Piece{White, King}, E1));
+    EXPECT_TRUE(board.hasPiece(Piece{Black, King}, E8));
+    EXPECT_FALSE(board.hasPiece(Piece{White, Pawn}, E4));
 }
 
 TEST(PositionTest, PieceAtReturnsExpectedTokens)
@@ -73,167 +72,36 @@ TEST(PositionTest, PrintPiecesOutputsInitialBoard)
     EXPECT_EQ(output, expected);
 }
 
-TEST(MoveGeneratorTest, WhitePawnCanMoveTwoSquaresFromStartingRank)
-{
-    Position board;
+TEST(PositionTest, GetPieceLocationsInitialPosition){
+    Position board = Position::startingPosition();
 
-    // Put one white pawn on E2.
-    board.setPiece(White, Pawn, E2);
+    for(int color_val = 0; color_val < ColorEnd; color_val++){
+        for(int type_val = 0; type_val < PieceTypeEnd; type_val++){
+            Color color = static_cast<Color> (color_val);
+            PieceType piece = static_cast<PieceType> (type_val);
 
-    // Make sure it is White's turn.
-    board.sideToMove = White;
+            std::vector<Square> pieceLocations = board.getPieceLocations(Piece{color, piece});
 
-    std::vector<Move> moves =
-        MoveGenerator::generateMoves(board);
+            // Check for duplicate locations
+            for(int i = 0; i < pieceLocations.size() - 1; i++){
+                for(int j = i + 1 ; j < pieceLocations.size(); j++){
+                    EXPECT_NE(pieceLocations.at(i), pieceLocations.at(j));
+                }
+            }
 
-    bool foundDoubleMove = false;
+            // Check correct amount of piece locations per piece type
+            if(piece == Pawn){
+                EXPECT_EQ(8, pieceLocations.size());
+            }else if(piece == King || piece == Queen){
+                EXPECT_EQ(1, pieceLocations.size());
+            }else{
+                EXPECT_EQ(2, pieceLocations.size());
+            }
 
-    for (const Move& move : moves)
-    {
-        if (
-            move.startSquare == E2 &&
-            move.stopSquare == E4
-        )
-        {
-            foundDoubleMove = true;
+            // Checks if each piece location is correct 
+            for(Square location: pieceLocations){
+                EXPECT_TRUE(board.hasPiece(Piece{color, piece}, location));
+            }
         }
-    }
-
-    EXPECT_TRUE(foundDoubleMove);
-}
-
-TEST(MoveGeneratorTest, WhitePawnCannotMoveTwoSquaresFromNonStartingRank)
-{
-    Position board;
-
-    board.setPiece(White, Pawn, E3);
-    board.sideToMove = White;
-
-    std::vector<Move> moves =
-        MoveGenerator::generateMoves(board);
-
-    bool foundIllegalDoubleMove = false;
-
-    for (const Move& move : moves)
-    {
-        if (
-            move.startSquare == E3 &&
-            move.stopSquare == E5
-        )
-        {
-            foundIllegalDoubleMove = true;
-        }
-    }
-
-    EXPECT_FALSE(foundIllegalDoubleMove);
-}
-
-TEST(MoveGeneratorTest, WhitePawnCannotJumpPieceOnDoubleMove)
-{
-    Position board;
-
-    board.setPiece(White, Pawn, E2);
-
-    // Block E3.
-    board.setPiece(Black, Knight, E3);
-
-    board.sideToMove = White;
-
-    std::vector<Move> moves =
-        MoveGenerator::generateMoves(board);
-
-    bool foundDoubleMove = false;
-
-    for (const Move& move : moves)
-    {
-        if (
-            move.startSquare == E2 &&
-            move.stopSquare == E4
-        )
-        {
-            foundDoubleMove = true;
-        }
-    }
-
-    EXPECT_FALSE(foundDoubleMove);
-}
-
-TEST(MoveGeneratorTest, KnightMovesFromCenter)
-{
-    Position board;
-
-    // Put one white knight in the middle of the board.
-    board.setPiece(White, Knight, D4);
-    board.sideToMove = White;
-
-    std::vector<Move> moves =
-        MoveGenerator::generateMoves(board);
-
-    // A knight in the center should have 8 possible moves.
-    int knightMoveCount = 0;
-
-    for (const Move& move : moves)
-    {
-        if (move.piece == Knight && move.startSquare == D4)
-        {
-            knightMoveCount++;
-        }
-    }
-
-    EXPECT_EQ(knightMoveCount, 8);
-}
-
-TEST(MoveGeneratorTest, KnightMovesFromCorner)
-{
-    Position board;
-
-    board.setPiece(White, Knight, A1);
-    board.sideToMove = White;
-
-    std::vector<Move> moves =
-        MoveGenerator::generateMoves(board);
-
-    int knightMoveCount = 0;
-
-    for (const Move& move : moves)
-    {
-        if (
-            move.piece == Knight &&
-            move.startSquare == A1
-        )
-        {
-            knightMoveCount++;
-        }
-    }
-
-    EXPECT_EQ(knightMoveCount, 2);
-}
-
-TEST(MoveGeneratorTest, KnightCannotLandOnFriendlyPiece)
-{
-    Position board;
-
-    board.setPiece(White, Knight, D4);
-    board.setPiece(White, Pawn, E6);
-
-    board.sideToMove = White;
-
-    std::vector<Move> moves =
-        MoveGenerator::generateMoves(board);
-
-    bool foundBlockedMove = false;
-
-    for (const Move& move : moves)
-    {
-        if (
-            move.piece == Knight &&
-            move.startSquare == D4 &&
-            move.stopSquare == E6
-        )
-        {
-            foundBlockedMove = true;
-        }
-    }
-
-    EXPECT_FALSE(foundBlockedMove);
+    }   
 }

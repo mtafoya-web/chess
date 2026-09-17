@@ -1,9 +1,8 @@
 #pragma once
-#include "position.h"
+#include "piece.h"
 
 struct Move{
-    Color pieceColor;
-    PieceType piece;
+    Piece piece;
     Square startSquare;
     Square stopSquare;
 };

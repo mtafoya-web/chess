@@ -1,66 +1,105 @@
 #include "chess/moveGenerator.h"
+#include "chess/piece.h"
 
-std::vector<Move> MoveGenerator::generateMoves(const Position& position){
+std::vector<Move> MoveGenerator::generateMoves(
+    const Position& position
+) {
     std::vector<Move> moves;
+
     generatePawnMoves(position, moves);
     generateKnightMoves(position, moves);
+
     return moves;
 }
 
 void MoveGenerator::generatePawnMoves(
     const Position& position,
     std::vector<Move>& moves
-)
-{
+) {
     Color color = position.sideToMove;
-    for(int square = A1; square <= H8; square++){
-        Square from = static_cast<Square>(square);
-        //Does square contain pawns?
-        if(!position.hasPiece(color, Pawn, from)) continue;
-        
-        //Orientation subtract for black add for white
-        int direction;
-        if(color == White) direction = 8;
-        else direction = -8;
-        // -----------------------------------------
-        // Move forward one square
-        // -----------------------------------------
-        int targetSquare = square + direction;
-        //bounds
-        if(targetSquare < A1 || targetSquare > H8) continue;
+    Piece pawn{color, Pawn};
 
+    // White pawns move up the board, black pawn move down
+    int direction;
+    if (color == White) {
+        direction = 8;
+    } else {
+        direction = -8;
+    }
+
+    std::vector<Square> pawnLocations =
+        position.getPieceLocations(pawn);
+
+    for (Square from : pawnLocations) {
+        int square = static_cast<int>(from);
+        int targetSquare = square + direction;
         Square to = static_cast<Square>(targetSquare);
 
-        if(position.pieceAt(to) == "--"){
+        // Check if another piece blocking move 
+        bool targetEmpty =
+            !position.getPiece(to).has_value();
+
+        if (targetEmpty) {
             moves.push_back({
-                color,
-                Pawn,
+                pawn,
                 from,
                 to
             });
         }
-            // -----------------------------------------
-        // Move forward two squares
-        // -----------------------------------------
 
+        //Pawns on their starting positions can move 2 squares up
         bool onStartingRank;
-        //Must be at starting point
-        if(color == White) onStartingRank = square >= A2 && square <= H2;
-        else onStartingRank = square >= A7 && square <= H7;
 
-        if (onStartingRank){
-            //Move two ranks foward
-            int doubleTargetSquare = square + (direction * 2);
-            Square doubleTo = static_cast<Square>(doubleTargetSquare);
+        if (color == White) {
+            onStartingRank =
+                square >= A2 && square <= H2;
+        } else {
+            onStartingRank =
+                square >= A7 && square <= H7;
+        }
 
-            //Pawn cannot jump to another piece
-            if(position.pieceAt(to) == "--" && position.pieceAt(doubleTo) == "--"){
+        if (onStartingRank) {
+            int doubleTargetSquare =
+                square + (direction * 2);
+
+            Square doubleTo =
+                static_cast<Square>(doubleTargetSquare);
+
+            bool doubleTargetEmpty =
+                !position.getPiece(doubleTo).has_value();
+
+            if (targetEmpty && doubleTargetEmpty) {
                 moves.push_back({
-                    color,
-                    Pawn,
+                    pawn,
                     from,
                     doubleTo
                 });
+            }
+        }
+
+        // checking for en passant 
+        int enPassantSquare = position.enPassantSquare;
+        if(enPassantSquare != -1){          
+            /*
+                En passant is possible if pawn is one square diagonally 
+                above/below (depends on color) the en passant square.
+            */
+            int enPassantRow = enPassantSquare / 8;
+            int enPassantCol = enPassantSquare % 8;
+            int fromRow = from / 8;
+            int fromCol = from % 8;
+
+            // If pawn is one column away from en passant square 
+            if(enPassantCol - fromCol == 1 ||  enPassantCol - fromCol == -1){
+
+                //If pawn is one row above/below en passant square (depends on color)
+                if((enPassantRow - fromRow) * 8 == direction){
+                    moves.push_back({
+                        pawn,
+                        from, 
+                        static_cast<Square>(enPassantSquare)
+                    });
+                }
             }
         }
     }
@@ -69,57 +108,63 @@ void MoveGenerator::generatePawnMoves(
 void MoveGenerator::generateKnightMoves(
     const Position& position,
     std::vector<Move>& moves
-)
-{
+) {
     Color color = position.sideToMove;
-    //Possible file offset  for a knight
+    Piece knight{color, Knight};
+
     int fileOffsets[8] = {
-        1, 2, 2, 1,
+         1,  2,  2,  1,
         -1, -2, -2, -1
     };
-    //Matching rank offset
+
     int rankOffsets[8] = {
-        2, 1, -1, -2,
-        -2, -1, 1, 2
+         2,  1, -1, -2,
+        -2, -1,  1,  2
     };
-    
-    for(int square = A1; square <= H8; square++){
-        Square from = static_cast<Square>(square);
 
-        if(!position.hasPiece(color, Knight, from)) continue;
+    std::vector<Square> knightLocations =
+        position.getPieceLocations(knight);
 
-        //Convert square num into board coordinates
+    for (Square from : knightLocations) {
+        int square = static_cast<int>(from);
         int fromFile = square % 8;
         int fromRank = square / 8;
 
-        //A knight has at most 8 possible destinations
-        for(int i = 0; i < 8; i++)
-        {
-            int targetFile = fromFile + fileOffsets[i];
-            int targentRank = fromRank + rankOffsets[i];
-            
-            //ignore moves that leave the board
-            if(targetFile < 0 || targetFile > 7 || targentRank < 0 || targentRank > 7) continue;
+        for (int i = 0; i < 8; ++i) {
+            int targetFile =
+                fromFile + fileOffsets[i];
 
-            //Convert back to square num
-            int targetSquare = targentRank * 8 + targetFile;
-            Square to = static_cast<Square>(targetSquare);
+            int targetRank =
+                fromRank + rankOffsets[i];
 
-            //Knights can't land on their own pieces.
-            bool friendlyPiece =
-                position.hasPiece(color, Pawn, to) ||
-                position.hasPiece(color, Knight, to) ||
-                position.hasPiece(color, Bishop, to) ||
-                position.hasPiece(color, Rook, to) ||
-                position.hasPiece(color, Queen, to) ||
-                position.hasPiece(color, King, to);
-            
-            if (friendlyPiece) continue;
+            if (
+                targetFile < 0 ||
+                targetFile > 7 ||
+                targetRank < 0 ||
+                targetRank > 7
+            ) {
+                continue;
+            }
 
-            //Destination is empty or enemy piece
+            int targetSquare =
+                targetRank * 8 + targetFile;
+
+            Square to =
+                static_cast<Square>(targetSquare);
+
+            // Checking if friendly piece is blocking target square
+            std::optional<Piece> targetPiece =
+                position.getPiece(to);
+
+            if (
+                targetPiece.has_value() &&
+                targetPiece->color == color
+            ) {
+                continue;
+            }
+
             moves.push_back({
-                color,
-                Knight,
+                knight,
                 from,
                 to
             });

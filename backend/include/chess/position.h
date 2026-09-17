@@ -5,21 +5,11 @@
 #pragma once
 #include <cstdint>
 #include <string>
-#include "chess/square.h"
+#include "square.h"
+#include "piece.h"
+#include <vector>
+#include <optional>
 
-enum Color {
-    White = 0,
-    Black = 1
-};
-
-enum PieceType {
-    Pawn = 0,
-    Knight = 1,
-    Bishop = 2,
-    Rook = 3,
-    Queen = 4,
-    King = 5
-};
 /*
     Bit position determines castle rights.
     A game with full castle rights would be 00001111.
@@ -30,13 +20,16 @@ enum CastlingRights : std::uint8_t {
     whiteShort = 1 << 0,
     whiteLong = 1 << 1,
     blackShort = 1 << 2,
-    blackLong = 1 << 3
+    blackLong = 1 << 3,
 };
+
+
+
 
 struct Position {
     /* The enum values are used as indices to access piece data
         E.g to get the bitboard for black knights:
-        std::uint64_t blackKnights = pieces[Color:Black][PieceType:Knight]
+        std::uint64_t blackKnights = pieces[Black][Knight]
     */
     std::uint64_t pieces[2][6]{};
 
@@ -45,15 +38,17 @@ struct Position {
 
     // -1 = no en passant
     int enPassantSquare = -1;
-    // Resets after non-repeatable move is played
+    // Resets after pawn move or capture played
     int halfmoveClock = 0;
     int fullmoveCount = 1;
 
     static Position startingPosition();
-    std::uint64_t squareMask(Square square) const;
-    bool hasPiece(Color color, PieceType type, Square square) const;
-    void setPiece(Color color, PieceType type, Square square);
-    void removePiece(Color color, PieceType type, Square square);
+    bool hasPiece(Piece piece, Square square) const;
+    void setPiece(Piece piece, Square square);
+    void removePiece(Piece piece, Square square);
+    void removePiece(Square square);
+    std::optional<Piece> getPiece(Square square) const;
+    std::vector<Square> getPieceLocations(Piece piece) const;
     void printPieces() const;
     std::string pieceAt(Square square) const;
 };
