@@ -138,7 +138,11 @@ This runs the backend build/test workflow in a consistent environment.
 - Keep the Docker setup as the default reproducible environment for onboarding.
 - Share the repo with the same commands so every developer gets the same compiler and dependency versions.
 
-## 9. Summary
+## 9. Move generator notes
+
+Pseudo-legal piece movement is implemented in `backend/src/moveGenerator.c++` and documented in `backend/MOVE_GENERATOR_README.md`. Read that file before changing movement rules; it explains how each piece is generated, why the code uses shared sliding-piece logic for bishops, rooks, and queens, and how to call `MoveGenerator::generateMoves()`.
+
+## 10. Summary
 
 The simplest path is:
 

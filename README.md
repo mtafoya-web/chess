@@ -77,8 +77,9 @@ Do not use `C/C++: g++.exe build active file`. That compiles only the open file 
 The backend has three parts:
 
 1. **Position library**: `backend/src/position.c++` implements the `Position` type declared in `backend/include/chess/position.h`.
-2. **Driver executable**: `backend/src/driver.c++` calls `Position::initPosition()` and `printPieces()` so the board can be viewed in a terminal.
-3. **Tests**: `backend/test/position_test.cpp` verifies piece placement, removal, initial setup, `pieceAt()`, and printed board output.
+2. **Move generator**: `backend/src/moveGenerator.c++` implements pseudo-legal movement for each piece type.
+3. **Driver executable**: `backend/src/driver.c++` prints the starting board so the board can be viewed in a terminal.
+4. **Tests**: `backend/test/position_test.cpp` verifies piece placement, removal, initial setup, `pieceAt()`, printed board output, and move generation.
 
 `Position` stores one bitboard for each color and piece type:
 
@@ -138,11 +139,14 @@ Implemented now:
 - Piece placement and removal
 - Piece lookup by square
 - Terminal board printing
+- Pseudo-legal move generation for pawns, knights, bishops, rooks, queens, and kings
 - GoogleTest coverage
+
+See [backend/MOVE_GENERATOR_README.md](backend/MOVE_GENERATOR_README.md) for implementation notes, rationale, and examples for each piece.
 
 Not implemented yet:
 
-- Legal move generation
+- Full legal move filtering for check/checkmate/stalemate
 - Check and checkmate detection
 - Castling and en passant behavior
 - Promotion
