@@ -1,5 +1,8 @@
 #pragma once
-//Maps Bits to board position
+/*
+    Maps Bits to board position. The numbers increase from the bottom left of
+    the board, left to right. 
+*/ 
 enum Square
 {
     A1 = 0,
@@ -72,5 +75,6 @@ enum Square
     E8 = 60,
     F8 = 61,
     G8 = 62,
-    H8 = 63
+    H8 = 63,
+    END = 64
 };

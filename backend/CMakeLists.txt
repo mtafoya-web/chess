@@ -28,6 +28,7 @@ enable_testing()
 add_library(chess_core STATIC
     src/position.c++
     src/moveGenerator.c++
+    src/utils.c++
 )
 
 target_include_directories(chess_core PUBLIC
@@ -39,6 +40,8 @@ target_sources(chess_core PUBLIC
     include/chess/square.h
     include/chess/move.h
     include/chess/moveGenerator.h
+    include/chess/piece.h
+    include/chess/utils.h
 )
 
 
@@ -61,6 +64,7 @@ target_link_libraries(chess_driver PRIVATE
 
 add_executable(chess_tests
     test/position_test.cpp
+    test/moveGenerator_test.cpp
 )
 
 target_link_libraries(chess_tests PRIVATE

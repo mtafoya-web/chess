@@ -7,6 +7,11 @@ bool isOnBoard(int file, int rank)
     return file >= 0 && file <= 7 && rank >= 0 && rank <= 7;
 }
 
+bool isSquareIndexOnBoard(int square)
+{
+    return square >= A1 && square <= H8;
+}
+
 Square makeSquare(int file, int rank)
 {
     return static_cast<Square>(rank * 8 + file);
@@ -14,41 +19,29 @@ Square makeSquare(int file, int rank)
 
 bool isEmpty(const Position& position, Square square)
 {
-    return position.pieceAt(square) == "--";
-}
-
-bool hasAnyPiece(const Position& position, Color color, Square square)
-{
-    return
-        position.hasPiece(color, Pawn, square) ||
-        position.hasPiece(color, Knight, square) ||
-        position.hasPiece(color, Bishop, square) ||
-        position.hasPiece(color, Rook, square) ||
-        position.hasPiece(color, Queen, square) ||
-        position.hasPiece(color, King, square);
+    return !position.getPiece(square).has_value();
 }
 
 bool hasFriendlyPiece(const Position& position, Color color, Square square)
 {
-    return hasAnyPiece(position, color, square);
+    std::optional<Piece> piece = position.getPiece(square);
+    return piece.has_value() && piece->color == color;
 }
 
 bool hasEnemyPiece(const Position& position, Color color, Square square)
 {
-    Color enemyColor = color == White ? Black : White;
-    return hasAnyPiece(position, enemyColor, square);
+    std::optional<Piece> piece = position.getPiece(square);
+    return piece.has_value() && piece->color != color;
 }
 
 void addMove(
     std::vector<Move>& moves,
-    Color color,
-    PieceType piece,
+    Piece piece,
     Square from,
     Square to
 )
 {
     moves.push_back({
-        color,
         piece,
         from,
         to
@@ -58,22 +51,20 @@ void addMove(
 void addMoveIfAllowed(
     const Position& position,
     std::vector<Move>& moves,
-    Color color,
-    PieceType piece,
+    Piece piece,
     Square from,
     Square to
 )
 {
-    if(hasFriendlyPiece(position, color, to)) return;
+    if (hasFriendlyPiece(position, piece.color, to)) return;
 
-    addMove(moves, color, piece, from, to);
+    addMove(moves, piece, from, to);
 }
 
 void addSlidingMovesInDirection(
     const Position& position,
     std::vector<Move>& moves,
-    Color color,
-    PieceType piece,
+    Piece piece,
     Square from,
     int startFile,
     int startRank,
@@ -84,14 +75,14 @@ void addSlidingMovesInDirection(
     int targetFile = startFile + fileStep;
     int targetRank = startRank + rankStep;
 
-    while(isOnBoard(targetFile, targetRank)){
+    while (isOnBoard(targetFile, targetRank)) {
         Square to = makeSquare(targetFile, targetRank);
 
-        if(hasFriendlyPiece(position, color, to)) return;
+        if (hasFriendlyPiece(position, piece.color, to)) return;
 
-        addMove(moves, color, piece, from, to);
+        addMove(moves, piece, from, to);
 
-        if(hasEnemyPiece(position, color, to)) return;
+        if (hasEnemyPiece(position, piece.color, to)) return;
 
         targetFile += fileStep;
         targetRank += rankStep;
@@ -120,20 +111,18 @@ void MoveGenerator::generatePawnMoves(
 )
 {
     Color color = position.sideToMove;
+    Piece pawn{color, Pawn};
     int forwardStep = color == White ? 8 : -8;
 
-    for(int square = A1; square <= H8; square++){
-        Square from = static_cast<Square>(square);
-
-        if(!position.hasPiece(color, Pawn, from)) continue;
-
+    for (Square from : position.getPieceLocations(pawn)) {
+        int square = static_cast<int>(from);
         int oneSquareForward = square + forwardStep;
 
-        if(oneSquareForward >= A1 && oneSquareForward <= H8){
+        if (isSquareIndexOnBoard(oneSquareForward)) {
             Square to = static_cast<Square>(oneSquareForward);
 
-            if(isEmpty(position, to)){
-                addMove(moves, color, Pawn, from, to);
+            if (isEmpty(position, to)) {
+                addMove(moves, pawn, from, to);
             }
         }
 
@@ -143,12 +132,12 @@ void MoveGenerator::generatePawnMoves(
 
         int twoSquaresForward = square + (forwardStep * 2);
 
-        if(onStartingRank && twoSquaresForward >= A1 && twoSquaresForward <= H8){
+        if (onStartingRank && isSquareIndexOnBoard(twoSquaresForward)) {
             Square middle = static_cast<Square>(oneSquareForward);
             Square to = static_cast<Square>(twoSquaresForward);
 
-            if(isEmpty(position, middle) && isEmpty(position, to)){
-                addMove(moves, color, Pawn, from, to);
+            if (isEmpty(position, middle) && isEmpty(position, to)) {
+                addMove(moves, pawn, from, to);
             }
         }
 
@@ -156,19 +145,40 @@ void MoveGenerator::generatePawnMoves(
         int leftCapture = square + forwardStep - 1;
         int rightCapture = square + forwardStep + 1;
 
-        if(fromFile > 0 && leftCapture >= A1 && leftCapture <= H8){
+        if (fromFile > 0 && isSquareIndexOnBoard(leftCapture)) {
             Square to = static_cast<Square>(leftCapture);
 
-            if(hasEnemyPiece(position, color, to)){
-                addMove(moves, color, Pawn, from, to);
+            if (hasEnemyPiece(position, color, to)) {
+                addMove(moves, pawn, from, to);
             }
         }
 
-        if(fromFile < 7 && rightCapture >= A1 && rightCapture <= H8){
+        if (fromFile < 7 && isSquareIndexOnBoard(rightCapture)) {
             Square to = static_cast<Square>(rightCapture);
 
-            if(hasEnemyPiece(position, color, to)){
-                addMove(moves, color, Pawn, from, to);
+            if (hasEnemyPiece(position, color, to)) {
+                addMove(moves, pawn, from, to);
+            }
+        }
+
+        int enPassantSquare = position.enPassantSquare;
+        if (enPassantSquare != -1) {
+            int enPassantRow = enPassantSquare / 8;
+            int enPassantCol = enPassantSquare % 8;
+            int fromRow = square / 8;
+            int fromCol = square % 8;
+
+            bool oneFileAway =
+                enPassantCol - fromCol == 1 ||
+                enPassantCol - fromCol == -1;
+
+            if (oneFileAway && (enPassantRow - fromRow) * 8 == forwardStep) {
+                addMove(
+                    moves,
+                    pawn,
+                    from,
+                    static_cast<Square>(enPassantSquare)
+                );
             }
         }
     }
@@ -180,26 +190,24 @@ void MoveGenerator::generateKnightMoves(
 )
 {
     Color color = position.sideToMove;
+    Piece knight{color, Knight};
 
     int fileOffsets[8] = { 1, 2, 2, 1, -1, -2, -2, -1 };
     int rankOffsets[8] = { 2, 1, -1, -2, -2, -1, 1, 2 };
 
-    for(int square = A1; square <= H8; square++){
-        Square from = static_cast<Square>(square);
-
-        if(!position.hasPiece(color, Knight, from)) continue;
-
+    for (Square from : position.getPieceLocations(knight)) {
+        int square = static_cast<int>(from);
         int fromFile = square % 8;
         int fromRank = square / 8;
 
-        for(int i = 0; i < 8; i++){
+        for (int i = 0; i < 8; i++) {
             int targetFile = fromFile + fileOffsets[i];
             int targetRank = fromRank + rankOffsets[i];
 
-            if(!isOnBoard(targetFile, targetRank)) continue;
+            if (!isOnBoard(targetFile, targetRank)) continue;
 
             Square to = makeSquare(targetFile, targetRank);
-            addMoveIfAllowed(position, moves, color, Knight, from, to);
+            addMoveIfAllowed(position, moves, knight, from, to);
         }
     }
 }
@@ -210,19 +218,17 @@ void MoveGenerator::generateBishopMoves(
 )
 {
     Color color = position.sideToMove;
+    Piece bishop{color, Bishop};
 
-    for(int square = A1; square <= H8; square++){
-        Square from = static_cast<Square>(square);
-
-        if(!position.hasPiece(color, Bishop, from)) continue;
-
+    for (Square from : position.getPieceLocations(bishop)) {
+        int square = static_cast<int>(from);
         int fromFile = square % 8;
         int fromRank = square / 8;
 
-        addSlidingMovesInDirection(position, moves, color, Bishop, from, fromFile, fromRank, 1, 1);
-        addSlidingMovesInDirection(position, moves, color, Bishop, from, fromFile, fromRank, 1, -1);
-        addSlidingMovesInDirection(position, moves, color, Bishop, from, fromFile, fromRank, -1, 1);
-        addSlidingMovesInDirection(position, moves, color, Bishop, from, fromFile, fromRank, -1, -1);
+        addSlidingMovesInDirection(position, moves, bishop, from, fromFile, fromRank, 1, 1);
+        addSlidingMovesInDirection(position, moves, bishop, from, fromFile, fromRank, 1, -1);
+        addSlidingMovesInDirection(position, moves, bishop, from, fromFile, fromRank, -1, 1);
+        addSlidingMovesInDirection(position, moves, bishop, from, fromFile, fromRank, -1, -1);
     }
 }
 
@@ -232,19 +238,17 @@ void MoveGenerator::generateRookMoves(
 )
 {
     Color color = position.sideToMove;
+    Piece rook{color, Rook};
 
-    for(int square = A1; square <= H8; square++){
-        Square from = static_cast<Square>(square);
-
-        if(!position.hasPiece(color, Rook, from)) continue;
-
+    for (Square from : position.getPieceLocations(rook)) {
+        int square = static_cast<int>(from);
         int fromFile = square % 8;
         int fromRank = square / 8;
 
-        addSlidingMovesInDirection(position, moves, color, Rook, from, fromFile, fromRank, 1, 0);
-        addSlidingMovesInDirection(position, moves, color, Rook, from, fromFile, fromRank, -1, 0);
-        addSlidingMovesInDirection(position, moves, color, Rook, from, fromFile, fromRank, 0, 1);
-        addSlidingMovesInDirection(position, moves, color, Rook, from, fromFile, fromRank, 0, -1);
+        addSlidingMovesInDirection(position, moves, rook, from, fromFile, fromRank, 1, 0);
+        addSlidingMovesInDirection(position, moves, rook, from, fromFile, fromRank, -1, 0);
+        addSlidingMovesInDirection(position, moves, rook, from, fromFile, fromRank, 0, 1);
+        addSlidingMovesInDirection(position, moves, rook, from, fromFile, fromRank, 0, -1);
     }
 }
 
@@ -254,23 +258,21 @@ void MoveGenerator::generateQueenMoves(
 )
 {
     Color color = position.sideToMove;
+    Piece queen{color, Queen};
 
-    for(int square = A1; square <= H8; square++){
-        Square from = static_cast<Square>(square);
-
-        if(!position.hasPiece(color, Queen, from)) continue;
-
+    for (Square from : position.getPieceLocations(queen)) {
+        int square = static_cast<int>(from);
         int fromFile = square % 8;
         int fromRank = square / 8;
 
-        addSlidingMovesInDirection(position, moves, color, Queen, from, fromFile, fromRank, 1, 0);
-        addSlidingMovesInDirection(position, moves, color, Queen, from, fromFile, fromRank, -1, 0);
-        addSlidingMovesInDirection(position, moves, color, Queen, from, fromFile, fromRank, 0, 1);
-        addSlidingMovesInDirection(position, moves, color, Queen, from, fromFile, fromRank, 0, -1);
-        addSlidingMovesInDirection(position, moves, color, Queen, from, fromFile, fromRank, 1, 1);
-        addSlidingMovesInDirection(position, moves, color, Queen, from, fromFile, fromRank, 1, -1);
-        addSlidingMovesInDirection(position, moves, color, Queen, from, fromFile, fromRank, -1, 1);
-        addSlidingMovesInDirection(position, moves, color, Queen, from, fromFile, fromRank, -1, -1);
+        addSlidingMovesInDirection(position, moves, queen, from, fromFile, fromRank, 1, 0);
+        addSlidingMovesInDirection(position, moves, queen, from, fromFile, fromRank, -1, 0);
+        addSlidingMovesInDirection(position, moves, queen, from, fromFile, fromRank, 0, 1);
+        addSlidingMovesInDirection(position, moves, queen, from, fromFile, fromRank, 0, -1);
+        addSlidingMovesInDirection(position, moves, queen, from, fromFile, fromRank, 1, 1);
+        addSlidingMovesInDirection(position, moves, queen, from, fromFile, fromRank, 1, -1);
+        addSlidingMovesInDirection(position, moves, queen, from, fromFile, fromRank, -1, 1);
+        addSlidingMovesInDirection(position, moves, queen, from, fromFile, fromRank, -1, -1);
     }
 }
 
@@ -280,26 +282,24 @@ void MoveGenerator::generateKingMoves(
 )
 {
     Color color = position.sideToMove;
+    Piece king{color, King};
 
     int fileOffsets[8] = { 1, 1, 0, -1, -1, -1, 0, 1 };
     int rankOffsets[8] = { 0, 1, 1, 1, 0, -1, -1, -1 };
 
-    for(int square = A1; square <= H8; square++){
-        Square from = static_cast<Square>(square);
-
-        if(!position.hasPiece(color, King, from)) continue;
-
+    for (Square from : position.getPieceLocations(king)) {
+        int square = static_cast<int>(from);
         int fromFile = square % 8;
         int fromRank = square / 8;
 
-        for(int i = 0; i < 8; i++){
+        for (int i = 0; i < 8; i++) {
             int targetFile = fromFile + fileOffsets[i];
             int targetRank = fromRank + rankOffsets[i];
 
-            if(!isOnBoard(targetFile, targetRank)) continue;
+            if (!isOnBoard(targetFile, targetRank)) continue;
 
             Square to = makeSquare(targetFile, targetRank);
-            addMoveIfAllowed(position, moves, color, King, from, to);
+            addMoveIfAllowed(position, moves, king, from, to);
         }
     }
 }

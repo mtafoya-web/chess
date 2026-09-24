@@ -138,11 +138,70 @@ This runs the backend build/test workflow in a consistent environment.
 - Keep the Docker setup as the default reproducible environment for onboarding.
 - Share the repo with the same commands so every developer gets the same compiler and dependency versions.
 
-## 9. Move generator notes
+## 9. Move generator and rules model
 
 Pseudo-legal piece movement is implemented in `backend/src/moveGenerator.c++` and documented in `backend/MOVE_GENERATOR_README.md`. Read that file before changing movement rules; it explains how each piece is generated, why the code uses shared sliding-piece logic for bishops, rooks, and queens, and how to call `MoveGenerator::generateMoves()`.
 
-## 10. Summary
+The current backend uses these core types:
+
+- `Position` stores the board, side to move, castling flags, en passant square, and move counters.
+- `Piece` stores a `color` and `type`.
+- `Move` stores the moving `Piece`, the `startSquare`, and the `stopSquare`.
+- `MoveGenerator::generateMoves(position)` returns all pseudo-legal moves for `position.sideToMove`.
+
+Pseudo-legal means the generator enforces basic piece movement, board bounds, friendly-piece blocking, enemy captures, and sliding-piece blockers. It does not yet enforce all complete chess rules.
+
+Currently generated:
+
+- pawn one-square moves
+- pawn starting-rank double moves
+- pawn diagonal captures
+- pawn en passant target moves when `Position::enPassantSquare` is already set
+- knight moves
+- bishop moves
+- rook moves
+- queen moves
+- king one-square moves
+
+Not fully implemented yet:
+
+- check detection
+- rejecting moves that leave the king in check
+- checkmate
+- stalemate
+- castling move generation
+- promotion
+- automatic en passant state updates after double pawn moves
+- special en passant captured-pawn removal in the driver
+
+## 10. Console driver simulation
+
+The console driver lives in `backend/src/driver.c++`. It is a simple player-vs-player pseudo-legal move demo.
+
+At runtime it:
+
+1. Creates `Position::startingPosition()`.
+2. Prints the board.
+3. Prompts the current side for a move like `e2 e4`.
+4. Parses the two text squares into `Square` enum values.
+5. Calls `MoveGenerator::generateMoves(board)`.
+6. Looks for a generated move with the requested start and stop squares.
+7. Applies that move if found:
+   - removes an enemy piece from the destination square, if present
+   - removes the moving piece from its start square
+   - places the moving piece on its stop square
+   - flips `board.sideToMove`
+8. Repeats until the user enters `quit` or input ends.
+
+Because the driver uses pseudo-legal moves, it can currently allow positions that would be illegal in a full chess engine. For example, it does not prevent a king from moving into check, does not detect checkmate, and does not update castling or en passant state during play.
+
+To run the driver after building:
+
+```powershell
+.\build\Debug\chess_driver.exe
+```
+
+## 11. Summary
 
 The simplest path is:
 

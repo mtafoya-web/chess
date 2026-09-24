@@ -1,5 +1,6 @@
 #include <cctype>
 #include <iostream>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -50,24 +51,19 @@ bool findMove(
 
 void removeCapturedPiece(Position& board, Color movingColor, Square square)
 {
-    Color enemyColor = movingColor == White ? Black : White;
+    std::optional<Piece> targetPiece = board.getPiece(square);
 
-    for(int piece = Pawn; piece <= King; piece++){
-        PieceType pieceType = static_cast<PieceType>(piece);
-
-        if(board.hasPiece(enemyColor, pieceType, square)){
-            board.removePiece(enemyColor, pieceType, square);
-            return;
-        }
+    if(targetPiece.has_value() && targetPiece->color != movingColor){
+        board.removePiece(square);
     }
 }
 
 void applyMove(Position& board, const Move& move)
 {
-    removeCapturedPiece(board, move.pieceColor, move.stopSquare);
+    removeCapturedPiece(board, move.piece.color, move.stopSquare);
 
-    board.removePiece(move.pieceColor, move.piece, move.startSquare);
-    board.setPiece(move.pieceColor, move.piece, move.stopSquare);
+    board.removePiece(move.piece, move.startSquare);
+    board.setPiece(move.piece, move.stopSquare);
 
     board.sideToMove = board.sideToMove == White ? Black : White;
 }

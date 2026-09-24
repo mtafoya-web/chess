@@ -21,35 +21,32 @@ std::vector<Move> moves = MoveGenerator::generateMoves(board);
 
 Each `Move` contains:
 
-- `pieceColor`: the moving side, `White` or `Black`
-- `piece`: the moving piece type, such as `Pawn` or `Knight`
+- `piece`: a `Piece` struct with `color` and `type`
 - `startSquare`: where the piece starts
 - `stopSquare`: where the piece moves
 
 The generator only creates move descriptions. It does not update the board.
 
-## Important Meaning: Pseudo-Legal
+## Pseudo-Legal Moves
 
 The current generator creates pseudo-legal moves.
 
-That means:
+That means it enforces basic piece movement:
 
 - The piece moves in the correct shape.
 - The destination is on the board.
 - The destination is empty or has an enemy piece.
 - The destination does not have a friendly piece.
+- Sliding pieces stop when another piece blocks the path.
 
-But it does not yet check every chess rule.
+It does not yet enforce every complete chess rule:
 
-Not handled yet:
-
-- Moving into check
-- Leaving your king in check
-- Checkmate
-- Stalemate
-- Castling
-- En passant
-- Promotion
+- Moving into check is not rejected.
+- Leaving your king in check is not rejected.
+- Checkmate and stalemate are not detected.
+- Castling is not generated.
+- Promotion is not generated.
+- En passant moves can be generated from `Position::enPassantSquare`, but the driver does not maintain that square during play and does not remove the captured pawn as a special en passant capture.
 
 So this generator is the basic movement layer, not the final legal-move layer.
 
@@ -70,13 +67,25 @@ Then it converts back with:
 Square to = makeSquare(file, rank);
 ```
 
-This makes edge checks easier. For example, a move is off the board if `file` is less than `0` or greater than `7`.
+This makes edge checks easier. A move is off the board if `file` or `rank` is outside `0..7`.
+
+## Position and Piece Lookup
+
+The position stores pieces by color and type. The generator uses:
+
+- `position.sideToMove` to decide which color should generate moves
+- `position.getPiece(square)` to see what occupies a square
+- `position.getPieceLocations(Piece{color, type})` to iterate only the pieces that can move
+
+This means each piece generator starts with the current side to move, builds a `Piece`, finds all matching squares, and appends valid destinations.
 
 ## Helper Functions
 
 The top of `moveGenerator.c++` has small helper functions.
 
 `isOnBoard(file, rank)` checks whether a file/rank pair is inside the chess board.
+
+`isSquareIndexOnBoard(square)` checks whether a raw square index is inside `A1..H8`.
 
 `isEmpty(position, square)` checks whether a square has no piece.
 
@@ -100,16 +109,14 @@ The code first decides which way the pawn moves:
 int forwardStep = color == White ? 8 : -8;
 ```
 
-Why:
-
-- White pawns move toward higher square numbers.
-- Black pawns move toward lower square numbers.
+White pawns move toward higher square numbers. Black pawns move toward lower square numbers.
 
 A pawn can:
 
 - Move forward one square if that square is empty.
-- Move forward two squares from its starting rank if both squares are empty.
+- Move forward two squares from its starting rank if both the middle and destination squares are empty.
 - Capture one square diagonally forward if that square has an enemy piece.
+- Move to `position.enPassantSquare` when that square is one file away and one pawn step forward.
 
 Example:
 
@@ -153,19 +160,6 @@ For each possible jump, the code checks:
 
 Knights can jump over pieces, so the code does not check any squares between the start and destination.
 
-Example:
-
-- White knight on `D4`
-- `E6` is empty
-
-Generated move:
-
-```text
-D4 -> E6
-```
-
-If `E6` has a white piece, that move is not generated.
-
 ## Bishops
 
 Bishops are handled in `generateBishopMoves()`.
@@ -187,20 +181,6 @@ It stops when:
 - It hits a friendly piece.
 - It captures an enemy piece.
 
-Example:
-
-- White bishop on `D4`
-- Empty squares on `E5` and `F6`
-
-Generated moves include:
-
-```text
-D4 -> E5
-D4 -> F6
-```
-
-If a black piece is on `F6`, then `D4 -> F6` is generated, but squares past `F6` are not.
-
 ## Rooks
 
 Rooks are handled in `generateRookMoves()`.
@@ -216,79 +196,54 @@ down
 
 It uses the same sliding helper as bishops.
 
-Example:
-
-- White rook on `D4`
-- Empty square on `D5`
-- Black piece on `D6`
-
-Generated moves include:
-
-```text
-D4 -> D5
-D4 -> D6
-```
-
-The rook stops at `D6` because that square has a captured enemy piece.
-
 ## Queens
 
 Queens are handled in `generateQueenMoves()`.
 
-A queen moves like a rook plus a bishop.
-
-So the code checks all eight directions:
-
-```text
-right, left, up, down
-up-right, down-right, up-left, down-left
-```
-
-It uses the same sliding helper as bishops and rooks.
-
-Example:
-
-- White queen on `D4`
-
-Generated moves can include:
-
-```text
-D4 -> D8
-D4 -> H4
-D4 -> H8
-D4 -> A1
-```
+A queen moves like a rook plus a bishop, so the code checks all eight sliding directions.
 
 ## Kings
 
 Kings are handled in `generateKingMoves()`.
 
-A king moves one square in any direction. The code uses eight file/rank offsets, just like the knight code, but each offset is only one square away.
-
-For each possible king move, the code checks:
+A king moves one square in any direction. For each possible king move, the code checks:
 
 - Is the target on the board?
 - Is the target free of friendly pieces?
 
-Example:
+The generator does not check whether the destination square is attacked.
 
-- White king on `D4`
-- Black piece on `E5`
-- White piece on `D5`
+## How the Driver Uses These Moves
 
-Generated:
+The console driver in `backend/src/driver.c++` uses `MoveGenerator::generateMoves()` to simulate a simple player-vs-player game.
 
-```text
-D4 -> E5
-```
+The loop works like this:
 
-Not generated:
+1. Start from `Position::startingPosition()`.
+2. Print the board.
+3. Prompt the current side for a move like `e2 e4`.
+4. Parse the two square names into `Square` values.
+5. Generate pseudo-legal moves for `board.sideToMove`.
+6. Search for a generated move with the requested start and stop squares.
+7. If the move exists, apply it:
+   - remove an enemy piece from the destination square, if present
+   - remove the moving piece from the start square
+   - place the moving piece on the destination square
+   - switch `sideToMove`
+8. Repeat until the user enters `quit` or input ends.
 
-```text
-D4 -> D5
-```
+The driver does not currently:
 
-The `D5` move is blocked by a friendly piece.
+- reject moves that expose or ignore check
+- detect check, checkmate, or stalemate
+- update castling rights
+- generate or apply castling
+- update `enPassantSquare` after double pawn moves
+- perform the special captured-pawn removal for en passant
+- promote pawns
+- track halfmove/fullmove clocks during play
+
+The driver is therefore a pseudo-legal movement demo, not a complete chess rules engine.
 
 ## Simple Reading Order
 
@@ -302,5 +257,6 @@ If you are new to this file, read it in this order:
 6. `generateRookMoves()`
 7. `generateQueenMoves()`
 8. `generateKingMoves()`
+9. `driver.c++`
 
-That order starts with the easiest pieces, then explains the shared sliding logic, then shows how the sliding pieces use it.
+That order starts with the easiest pieces, then explains the shared sliding logic, then shows how the generated moves are used by the console demo.
