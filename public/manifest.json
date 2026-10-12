@@ -1,0 +1,33 @@
+{
+    "manifest_version": 3,
+    "name": "Kibitz - Explainable Chess AI",
+    "version": "1.0.0",
+    "description": "Real-time Explainable chess move commentary powered by local engine anlysis and small LLMs.",
+    "permissions": [
+        "sidePanel",
+        "storage",
+        "activeTab"
+    ],
+    "host_permissions": [
+        "https://www.chess.com/*",
+        "https://lichess.org/*",
+        "http://localhost:11434/*"
+    ],
+    "background": {
+        "service_worker": "background.js",
+        "type": "module"
+    },
+    "content_scripts": [
+        {
+            "matches":[
+                "https://www.chess.com/play/*",
+                "https://www.chess.com/game/*",
+                "https://lichess.org/*"
+            ],
+            "js": ["content.js"]
+        }
+    ],
+    "side_panel": {
+        "default_path": "side_panel.html"
+    }
+}

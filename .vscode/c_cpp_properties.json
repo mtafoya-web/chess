@@ -1,0 +1,35 @@
+{
+    "configurations": [
+        {
+            "name": "Windows",
+            "compilerPath": "C:/Program Files (x86)/Microsoft Visual Studio/2022/BuildTools/VC/Tools/MSVC/14.43.34808/bin/Hostx64/x64/cl.exe",
+            "cStandard": "c17",
+            "cppStandard": "c++17",
+            "includePath": [
+                "${workspaceFolder}/backend/src",
+                "${workspaceFolder}/build/_deps/googletest-src/googletest/include",
+                "${workspaceFolder}/backend/build/_deps/googletest-src/googletest/include",
+                "${workspaceFolder}/backend/include/chess"
+            ],
+            "defines": [
+                "_CRT_SECURE_NO_WARNINGS"
+            ],
+            "intelliSenseMode": "windows-msvc-x64",
+            "configurationProvider": "ms-vscode.cmake-tools"
+        },
+        {
+            "name": "GCC",
+            "compilerPath": "C:/Users/tafoy/scoop/apps/gcc/current/bin/g++.exe",
+            "cStandard": "c17",
+            "cppStandard": "c++17",
+            "includePath": [
+                "${workspaceFolder}/backend/src",
+                "${workspaceFolder}/build/_deps/googletest-src/googletest/include",
+                "${workspaceFolder}/backend/build/_deps/googletest-src/googletest/include"
+            ],
+            "intelliSenseMode": "windows-gcc-x64",
+            "configurationProvider": "ms-vscode.cmake-tools"
+        }
+    ],
+    "version": 4
+}
