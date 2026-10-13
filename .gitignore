@@ -1,0 +1,5 @@
+#Ignore dist && .vscode && node_modules
+node_modules/
+dist/
+*.log
+*.exe
