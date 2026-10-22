@@ -8,6 +8,11 @@ export interface SiteTheme {
     fontFamily: string;
     dark: boolean;
 }
+export interface PanelThemeMessage {
+    type: 'SITE_THEME'; tabId: number; url: string; theme?: SiteTheme;
+}
+/** Move-selection hashes do not change the page's card palette. */
+export const themePageUrl = (url: string) => url.split('#')[0];
 const luminance = (color: string) => {
     const rgb = color.match(/[\d.]+/g)?.slice(0, 3).map(Number);
     if (!rgb || rgb.length < 3) return 0;

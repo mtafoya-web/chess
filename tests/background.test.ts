@@ -50,12 +50,26 @@ it('relays only validated active-tab themes and does not reuse a palette on anot
     const port = connectPanel();
     const theme = { site: 'lichess', background: 'rgb(30, 30, 30)', foreground: '#eeeeee', accent: '#82a958', radius: '4px', fontFamily: 'sans-serif', dark: true };
     await send({ type: 'SITE_THEME', theme });
-    expect(port).toHaveBeenCalledWith({ type: 'SITE_THEME', theme });
-    expect(await send({ type: 'GET_SITE_THEME' }, panel)).toEqual({ theme });
+    expect(port).toHaveBeenCalledWith({ type: 'SITE_THEME', tabId:12,url:activeUrl,theme });
+    expect(await send({ type: 'GET_SITE_THEME' }, panel)).toEqual({ tabId:12,url:activeUrl,theme });
     await send({ type: 'SITE_THEME', theme: { ...theme, background: 'url(bad)' } });
     expect(port).toHaveBeenCalledOnce();
     activeUrl = 'https://example.com/';
-    expect(await send({ type: 'GET_SITE_THEME' }, panel)).toEqual({ theme: undefined });
+    expect(await send({ type: 'GET_SITE_THEME' }, panel)).toEqual({ tabId:12,url:activeUrl,theme: undefined });
+});
+it('preserves the cached card theme through move hashes and rejects themes from an old page or another tab', async () => {
+    const post = connectPanel();
+    const theme = { site:'lichess',background:'#181818',foreground:'#eeeeee',accent:'#82a958',radius:'4px',fontFamily:'sans-serif',dark:true };
+    activeUrl = 'https://lichess.org/analysis#4';
+    await send({type:'SITE_THEME',theme},{...page,url:activeUrl});
+    activeUrl = 'https://lichess.org/analysis#8';
+    expect(await send({type:'GET_SITE_THEME'},panel)).toEqual({tabId:12,url:'https://lichess.org/analysis',theme});
+    activeUrl = 'https://lichess.org/other';
+    expect(await send({type:'SITE_THEME',theme},page)).toEqual({ok:false});
+    expect(post).toHaveBeenCalledOnce();
+    expect((await send({type:'GET_SITE_THEME'},panel)).theme).toBeUndefined();
+    activeTab = 99; activeUrl = 'https://lichess.org/analysis';
+    expect(await send({type:'GET_SITE_THEME'},panel)).toEqual({tabId:99,url:activeUrl,theme:undefined});
 });
 it('routes verified Lichess candidates as advice while retaining the engine source identity', async () => {
     const fen = new Chess().fen();

@@ -5,12 +5,14 @@ import { normalizedFen } from './chess';
 import { DEFAULT_SETTINGS, ORIGINS, type AnalysisEvent, type CloudProvider, type Settings } from './types';
 import { renderMarkdown } from './markdown';
 import { chromeAvailability, downloadChromeAI } from './chrome-ai';
-import { applySiteTheme, isSiteTheme } from './theme';
+import { applySiteTheme, themePageUrl } from './theme';
+import { KIBITZ_MARK } from './wordmark';
 import { explanationStatus } from './explanation-state';
 import { buildExplanationFacts } from './explanation-facts';
 import { renderExplanation } from './coach-prompt';
 
 const element = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
+document.querySelector('header .brand')!.innerHTML = `${KIBITZ_MARK}<span>Kibitz</span>`;
 const provider = element<HTMLSelectElement>('provider');
 const model = element<HTMLInputElement>('model');
 const key = element<HTMLInputElement>('key');
@@ -164,45 +166,51 @@ element<HTMLInputElement>('pgn-file').addEventListener('change', async event => 
 let themeRequest = 0;
 let themeLocked = false;
 let themePage = '';
-const themePageKey = (tab: Pick<chrome.tabs.Tab, 'id' | 'url'>) => `${tab.id}:${(tab.url ?? '').split('#')[0]}`;
+let themeTabId: number | undefined;
+const themePageKey = (tab: { id?: number; url?: string }) => `${tab.id ?? -1}:${themePageUrl(tab.url ?? '')}`;
+function clearPanelTheme() {
+    const target = document.documentElement;
+    for (const key of ['--k-bg', '--k-fg', '--k-accent', '--k-border', '--k-radius', '--k-gold', 'font-family', 'color-scheme']) target.style.removeProperty(key);
+    target.style.colorScheme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+    delete target.dataset.site;
+    element('theme-label').textContent = 'Using your system theme';
+}
 function receiveTheme(message: unknown): boolean {
-    if (!message || typeof message !== 'object' || (message as {type?: string}).type !== 'SITE_THEME') return false;
+    if (!isPanelMessage(message) || message.type !== 'SITE_THEME') return false;
+    if (themePageKey({id:message.tabId,url:message.url}) !== themePage) return true;
     themeRequest++;
     if (themeLocked) return true;
-    const theme = (message as {theme?: unknown}).theme;
-    if (isSiteTheme(theme)) {
+    const theme = message.theme;
+    if (theme) {
         applySiteTheme(document.documentElement, theme);
         themeLocked = true;
         element('theme-label').textContent = `Matched to ${theme.site === 'lichess' ? 'Lichess' : 'Chess.com'} · ${theme.dark ? 'dark' : 'light'}`;
-    } else {
-        const target = document.documentElement;
-        for (const key of ['--k-bg', '--k-fg', '--k-accent', '--k-border', '--k-radius', '--k-gold', 'font-family', 'color-scheme']) target.style.removeProperty(key);
-        target.style.colorScheme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
-        delete target.dataset.site;
-        element('theme-label').textContent = 'Using your system theme';
-    }
+    } else clearPanelTheme();
     return true;
 }
 async function refreshTheme() {
     const request = ++themeRequest;
+    themeLocked = false; themePage = '';
     try {
         const tabs = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
         if (request !== themeRequest) return;
-        themePage = tabs[0] ? themePageKey(tabs[0]) : '';
+        themeTabId = tabs[0]?.id;
+        themePage = themePageKey(tabs[0] ?? {});
         const response = await send({ type: 'GET_SITE_THEME' });
-        if (request === themeRequest) receiveTheme({ type: 'SITE_THEME', theme: response?.theme ?? response });
-    } catch { if (request === themeRequest) receiveTheme({ type: 'SITE_THEME' }); }
+        if (request !== themeRequest) return;
+        if (response?.tabId === undefined) receiveTheme({ type: 'SITE_THEME', tabId:themeTabId ?? -1, url:tabs[0]?.url ?? '' });
+        else receiveTheme({ ...response, type: 'SITE_THEME' });
+    } catch {
+        if (request === themeRequest) clearPanelTheme();
+    }
 }
 chrome.runtime.onMessage.addListener((message, sender) => { if (isBackgroundSender(sender) && isPanelMessage(message)) receiveTheme(message); });
-chrome.tabs.onActivated.addListener(() => { themeLocked = false; void refreshTheme(); });
+chrome.tabs.onActivated.addListener(() => { void refreshTheme(); });
 chrome.tabs.onUpdated.addListener((tabId, info) => {
+    if (tabId !== themeTabId) return;
     if (info.status !== 'complete' && !info.url) return;
-    void chrome.tabs.query({ active: true, lastFocusedWindow: true }).then(tabs => {
-        if (tabs[0]?.id !== tabId) return;
-        const page = themePageKey({id:tabId,url:info.url ?? tabs[0].url});
-        if (info.status !== 'complete' && page === themePage) return;
-        themeLocked = false; void refreshTheme();
-    });
+    if (info.status !== 'complete' && themePageKey({id:tabId,url:info.url}) === themePage) return;
+    void refreshTheme();
 });
 void refreshTheme();
 function updateOllamaCommands() {

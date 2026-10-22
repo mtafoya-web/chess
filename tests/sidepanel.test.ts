@@ -7,7 +7,10 @@ import { evaluation } from '../src/chess';
 vi.mock('../src/chrome-ai', () => ({ chromeAvailability: vi.fn(async () => 'unavailable'), downloadChromeAI: vi.fn() }));
 const storageSet = vi.fn(async () => {});
 let configured = { gemini: true, openai: false, groq: false };
+let activeThemeTab = { id:12, url:'https://lichess.org/analysis' };
+let lookupTheme: () => Promise<{tabId:number;url:string;theme?:unknown}>;
 const sendMessage = vi.fn(async (message: {type: string; settings?: unknown; credentials?: Record<string, string | null>}) => {
+    if (message.type === 'GET_SITE_THEME') return lookupTheme();
     if (message.type === 'GET_SETTINGS') return { settings: structuredClone(DEFAULT_SETTINGS), configured: { ...configured } };
     if (message.type === 'SAVE_SETTINGS') {
         for (const [provider, value] of Object.entries(message.credentials ?? {})) configured[provider as keyof typeof configured] = value !== null;
@@ -16,16 +19,19 @@ const sendMessage = vi.fn(async (message: {type: string; settings?: unknown; cre
     return {};
 });
 const listeners: ((message: unknown) => void)[] = [];
+const themeEvent = (message: object) => listeners[0]({tabId:activeThemeTab.id,url:activeThemeTab.url,...message});
 let activate: () => void;
 let updateTab: (id: number, info: { status?: string; url?: string }) => void;
 beforeEach(async () => {
+    activeThemeTab = {id:12,url:'https://lichess.org/analysis'};
+    lookupTheme = async () => ({tabId:activeThemeTab.id,url:activeThemeTab.url});
     vi.resetModules(); storageSet.mockClear(); sendMessage.mockClear(); configured = { gemini: true, openai: false, groq: false }; listeners.length = 0;
     document.documentElement.innerHTML = readFileSync('sidepanel.html', 'utf8').replace(/<script[^>]*>[\s\S]*?<\/script>/g, '');
     const event = { addListener: vi.fn() };
     vi.stubGlobal('matchMedia', vi.fn(() => ({ matches: false })));
     vi.stubGlobal('chrome', {runtime: {id:'kibitz-test', sendMessage, connect:() => ({onMessage:{addListener:(fn: (m:unknown)=>void) => listeners.push(fn)}, onDisconnect:event}), onMessage:event},
         storage:{sync:{get:async () => ({settings:structuredClone(DEFAULT_SETTINGS)}),set:storageSet}},
-        permissions:{request:vi.fn(async () => true)}, tabs:{query:async () => [{id:12,url:'https://lichess.org/analysis'}],onActivated:{addListener:(fn:typeof activate)=>{activate=fn;}},onUpdated:{addListener:(fn:typeof updateTab)=>{updateTab=fn;}}}});
+        permissions:{request:vi.fn(async () => true)}, tabs:{query:async () => [{...activeThemeTab}],onActivated:{addListener:(fn:typeof activate)=>{activate=fn;}},onUpdated:{addListener:(fn:typeof updateTab)=>{updateTab=fn;}}}});
     await import('../src/sidepanel');
     await new Promise(resolve => setTimeout(resolve, 0));
 });
@@ -61,16 +67,16 @@ it('opens the chosen provider setup and shares the active website theme', () => 
     expect((document.getElementById('ollama-settings') as HTMLDetailsElement).open).toBe(true);
     expect(document.getElementById('cloud-settings')!.hidden).toBe(true);
     expect(document.getElementById('ollama-command')!.textContent).toContain('chrome-extension://kibitz-test');
-    listeners[0]({type:'SITE_THEME',theme:{site:'lichess',background:'rgb(20, 20, 20)',foreground:'#eeeeee',accent:'#a0c66a',radius:'4px',fontFamily:'sans-serif',dark:true}});
+    themeEvent({type:'SITE_THEME',theme:{site:'lichess',background:'rgb(20, 20, 20)',foreground:'#eeeeee',accent:'#a0c66a',radius:'4px',fontFamily:'sans-serif',dark:true}});
     expect(document.documentElement.style.getPropertyValue('--k-bg')).toBe('rgb(20, 20, 20)');
     expect(document.getElementById('theme-label')!.textContent).toContain('Lichess · dark');
 });
 
 it('keeps the matched palette until arrival at another page', async () => {
-    listeners[0]({type:'SITE_THEME',theme:{site:'chesscom',background:'#262421',foreground:'#eeeeee',accent:'#a0c66a',radius:'8px',fontFamily:'sans-serif',dark:true}});
+    themeEvent({type:'SITE_THEME',theme:{site:'chesscom',background:'#262421',foreground:'#eeeeee',accent:'#a0c66a',radius:'8px',fontFamily:'sans-serif',dark:true}});
     expect(document.documentElement.style.getPropertyValue('--k-bg')).toBe('#262421');
-    listeners[0]({type:'SITE_THEME'});
-    listeners[0]({type:'SITE_THEME',theme:{site:'chesscom',background:'#ffffff',foreground:'#222222',accent:'#496f24',radius:'8px',fontFamily:'serif',dark:false}});
+    themeEvent({type:'SITE_THEME'});
+    themeEvent({type:'SITE_THEME',theme:{site:'chesscom',background:'#ffffff',foreground:'#222222',accent:'#496f24',radius:'8px',fontFamily:'serif',dark:false}});
     expect(document.documentElement.style.getPropertyValue('--k-bg')).toBe('#262421');
     updateTab(99, {status:'complete'}); await new Promise(resolve => setTimeout(resolve, 0));
     expect(document.documentElement.style.getPropertyValue('--k-bg')).toBe('#262421');
@@ -84,20 +90,20 @@ it('keeps the matched palette until arrival at another page', async () => {
 });
 it('allows the first late website palette and rematches on active-page reload', async () => {
     const theme = {site:'lichess',background:'#181818',foreground:'#eeeeee',accent:'#a0c66a',radius:'4px',fontFamily:'sans-serif',dark:true};
-    listeners[0]({type:'SITE_THEME',theme});
+    themeEvent({type:'SITE_THEME',theme});
     expect(document.documentElement.style.colorScheme).toBe('dark');
     updateTab(12, {status:'complete'}); await new Promise(resolve => setTimeout(resolve, 0));
-    listeners[0]({type:'SITE_THEME',theme:{...theme,background:'#fafafa',dark:false}});
+    themeEvent({type:'SITE_THEME',theme:{...theme,background:'#fafafa',dark:false}});
     expect(document.documentElement.style.getPropertyValue('--k-bg')).toBe('#fafafa');
 });
 it('ignores move hashes but unlocks on navigation within the website', async () => {
     const theme = {site:'lichess',background:'#181818',foreground:'#eeeeee',accent:'#a0c66a',radius:'4px',fontFamily:'sans-serif',dark:true};
-    listeners[0]({type:'SITE_THEME',theme});
+    themeEvent({type:'SITE_THEME',theme});
     updateTab(12, {url:'https://lichess.org/analysis#12'}); await new Promise(resolve => setTimeout(resolve, 0));
-    listeners[0]({type:'SITE_THEME',theme:{...theme,background:'#fafafa',dark:false}});
+    themeEvent({type:'SITE_THEME',theme:{...theme,background:'#fafafa',dark:false}});
     expect(document.documentElement.style.getPropertyValue('--k-bg')).toBe('#181818');
     updateTab(12, {url:'https://lichess.org/another-game'}); await new Promise(resolve => setTimeout(resolve, 0));
-    listeners[0]({type:'SITE_THEME',theme:{...theme,background:'#fafafa',dark:false}});
+    themeEvent({type:'SITE_THEME',theme:{...theme,background:'#fafafa',dark:false}});
     expect(document.documentElement.style.getPropertyValue('--k-bg')).toBe('#fafafa');
 });
 it('loads flags without filling saved keys and preserves, replaces, and removes credentials explicitly', async () => {

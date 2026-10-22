@@ -1,5 +1,5 @@
 import { isDiagnostic } from './diagnostics';
-import { isSiteTheme } from './theme';
+import { isSiteTheme, type PanelThemeMessage } from './theme';
 import { ORIGINS, type AnalysisEvent, type EngineJob, type Evaluation, type MoveAnalysisRequest } from './types';
 import type { ReviewEvent, ReviewJob, ReviewRequest, ReviewSession } from './review-types';
 import type { PanelSettings, SettingsUpdate } from './settings';
@@ -88,7 +88,7 @@ const panelOnly = new Set(['GET_SETTINGS','SAVE_SETTINGS','GET_SITE_THEME','CAPT
 export function canSendRequest(v: BackgroundRequest, context: 'panel' | 'content'): boolean {
     return panelOnly.has(v.type) ? context === 'panel' : member(v.type, ['ANALYSIS_REQUEST','CANCEL','GET_OVERLAY_PREFERENCES','SET_OVERLAY_PREFERENCES']) || context === 'content';
 }
-export interface RuntimeResponse { error?: string; ok?: boolean; title?: string; theme?: unknown }
+export interface RuntimeResponse { error?: string; ok?: boolean; title?: string; theme?: unknown; tabId?: number; url?: string }
 export function sendBackground(message: { type: 'GET_SETTINGS' } | ({ type: 'SAVE_SETTINGS' } & SettingsUpdate)): Promise<PanelSettings & RuntimeResponse>;
 export function sendBackground(message: BackgroundRequest): Promise<RuntimeResponse>;
 export function sendBackground(message: BackgroundRequest): Promise<RuntimeResponse | PanelSettings> { return chrome.runtime.sendMessage(message); }
@@ -97,6 +97,6 @@ export type ContentMessage = AnalysisEvent | ReviewEvent | { type: 'REOPEN' | 'R
 export function isContentMessage(v: unknown): v is ContentMessage {
     return isAnalysisEvent(v) || record(v) && (v.type === 'REOPEN' || v.type === 'REFRESH' || v.type === 'REVIEW_LOADED' && isReviewSession(v.session));
 }
-export function isPanelMessage(v: unknown): v is (AnalysisEvent | ReviewEvent) & { manual: boolean } | { type: 'SITE_THEME'; theme?: unknown } {
-    return record(v) && (v.type === 'SITE_THEME' && (v.theme === undefined || isSiteTheme(v.theme)) || isAnalysisEvent(v) && typeof (v as RecordValue).manual === 'boolean');
+export function isPanelMessage(v: unknown): v is (AnalysisEvent | ReviewEvent) & { manual: boolean } | PanelThemeMessage {
+    return record(v) && (v.type === 'SITE_THEME' && Number.isInteger(v.tabId) && boundedText(v.url, 2048) && (v.theme === undefined || isSiteTheme(v.theme)) || isAnalysisEvent(v) && typeof (v as RecordValue).manual === 'boolean');
 }

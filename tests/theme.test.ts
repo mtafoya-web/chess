@@ -11,10 +11,13 @@ it('shares a website palette with the settings surface and follows dark/light ch
     expect(target.dataset.site).toBe('lichess');
     expect(target.style.getPropertyValue('--k-bg')).toBe('rgb(24, 24, 24)');
     expect(target.style.colorScheme).toBe('dark');
+    expect(target.style.getPropertyValue('--k-gold')).toBe('#d5b45d');
+    expect(target.style.getPropertyValue('--k-radius')).toBe('4px');
     context.style.background = 'rgb(250,250,250)';
     const light = readSiteTheme(board, true);
     expect(light.dark).toBe(false); expect(light.foreground).toBe('#242424');
     applySiteTheme(target, light); expect(target.style.colorScheme).toBe('light');
+    expect(target.style.getPropertyValue('--k-gold')).toBe('#98701e');
 });
 it('rejects malformed messages rather than applying arbitrary CSS', () => {
     expect(isSiteTheme(null)).toBe(false);

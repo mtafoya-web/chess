@@ -11,7 +11,7 @@ import type { ReviewEvent, ReviewRequest, ReviewSession } from './review-types';
 import { readNativeReview, resolveReviewPly, navigateNativeReview } from './site-review';
 import { readNativeEngine } from './site-engine';
 import { normalizeNativeEngine } from './analysis-sources';
-import { isSiteTheme } from './theme';
+import { isSiteTheme, themePageUrl } from './theme';
 
 class SafeRequestError extends Error {}
 let creating: Promise<void> | undefined;
@@ -174,13 +174,16 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
             return { ok: true };
         }
         if (!panel && request.type === 'SITE_THEME' && sender.frameId === 0 && tab?.id === sender.tab?.id && isSiteTheme(request.theme)) {
-            await chrome.storage.session.set({ [`siteTheme:${tab.id}`]: { url: sender.url, theme: request.theme } });
-            for (const port of panels) { try { port.postMessage({ type: 'SITE_THEME', theme: request.theme }); } catch {} }
+            if (!sender.url || !tab.url || themePageUrl(sender.url) !== themePageUrl(tab.url)) return { ok: false };
+            const url = themePageUrl(sender.url);
+            await chrome.storage.session.set({ [`siteTheme:${tab.id}`]: { url, theme: request.theme } });
+            for (const port of panels) { try { port.postMessage({ type: 'SITE_THEME', tabId: tab.id, url, theme: request.theme }); } catch {} }
             return { ok: true };
         }
         if (panel && request.type === 'GET_SITE_THEME') {
             const saved = (tab?.id ? (await chrome.storage.session.get(`siteTheme:${tab.id}`))[`siteTheme:${tab.id}`] : undefined) as { url?: string; theme?: unknown } | undefined;
-            return { theme: saved?.url === tab?.url && isSiteTheme(saved?.theme) ? saved.theme : undefined };
+            const url = themePageUrl(tab?.url ?? '');
+            return { tabId: tab?.id ?? -1, url, theme: saved?.url && themePageUrl(saved.url) === url && isSiteTheme(saved.theme) ? saved.theme : undefined };
         }
         if (panel && request.type === 'CAPTURE_GAME') return { session: await captureGame(tab) };
         if (panel && (request.type === 'START_PAGE_REVIEW' || request.type === 'IMPORT_PAGE_REVIEW')) {
