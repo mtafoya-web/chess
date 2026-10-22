@@ -1,4 +1,3 @@
-import { Chess } from 'chess.js';
 import { matchesBoard, type Position } from './adapters';
 import type { Card } from './card';
 import type { Overlay } from './overlay';
@@ -191,7 +190,7 @@ export class InPageReviewController {
         if (!this.verified()) return;
         const result = this.results.get(this.selected!);
         if (result) {
-            this.card.showReview(result.after, result.feedback, result.before, this.currentSession!.moves[this.selected! - 1]?.san, result.advice, result.advice?.source?.label, this.position!.fen, this.currentSession!.moves[this.selected! - 1]?.beforeFen);
+            this.card.showReview(result.after, result.feedback, result.before, this.currentSession!.moves[this.selected! - 1]?.san, result.advice, this.position!.fen, this.currentSession!.moves[this.selected! - 1]?.beforeFen);
             this.card.showPositionFacts(buildBoardContext(this.position!.fen!, { sessionId: this.currentSession!.id, initialFen: this.currentSession!.initialFen, moves: this.currentSession!.moves.map(move => move.uci), ply: this.selected! }));
             this.card.showOpening(this.openings.get(this.selected!));
             const ai = this.aiText.get(this.selected!); if (ai) this.card.showReviewAI(ai.text, ai.provider);

@@ -27,7 +27,6 @@ async function runReview(job: ReviewJob) {
     try {
         emit({ ...base, type: 'REVIEW_STATUS', text: 'Comparing the move with Stockfish…' });
         const result = await reviewer.analyze(request, controller.signal);
-        const advice = job.nativeEvaluation ?? result.after;
         const reviewFacts: ReviewFacts | undefined = result.feedback ? { summary: result.feedback.summary, label: result.feedback.label, lossCp: result.feedback.lossCp, playedMove: result.move?.san, before: result.before, history: { sessionId: request.sessionId, initialFen: request.initialFen, moves: request.moves, ply: request.ply } } : undefined;
         const feedback = result.feedback && reviewFacts ? { ...result.feedback, summary: renderExplanation(buildExplanationFacts(result.fen, result.after, reviewFacts)) } : result.feedback;
         const history = { sessionId: request.sessionId, initialFen: request.initialFen, moves: request.moves, ply: request.ply };

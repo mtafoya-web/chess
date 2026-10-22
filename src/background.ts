@@ -95,7 +95,7 @@ async function captureGame(tab: chrome.tabs.Tab | undefined) {
     await chrome.storage.session.set({ [`siteReview:${tab.id}`]: session });
     return session;
 }
-async function startReview(request: ReviewRequest, tabId: number, turn = ++generation, sourceUrl?: string, background = false) {
+async function startReview(request: ReviewRequest, tabId: number, turn = ++generation) {
     pendingTabId = tabId;
     if (typeof request.sessionId !== 'string' || request.sessionId.length > 120 || typeof request.requestId !== 'string' || request.requestId.length > 120 || !Array.isArray(request.moves) || request.moves.length > 1500 || !Number.isInteger(request.ply) || request.ply < 0 || request.ply > request.moves.length) throw new SafeRequestError('Invalid review request.');
     // Replay independently in the trusted context before sending work to Stockfish.
@@ -228,7 +228,7 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
             if (!native?.allowed || resolveReviewPly(saved, native) === undefined) throw new SafeRequestError('Waiting for a verified position on the website board.');
             // Full-game jobs may evaluate other plies but never navigate the native board.
             if (!request.background && resolveReviewPly(saved, native) !== request.ply) throw new SafeRequestError('The selected move changed.');
-            await startReview(request as ReviewRequest, tab.id!, turn, sender.url, request.background === true);
+            await startReview(request as ReviewRequest, tab.id!, turn);
             return { ok: true };
         }
         if (request.type === 'POSITION_REQUEST' && !panel && tab?.id === sender.tab!.id && sender.frameId === 0) {

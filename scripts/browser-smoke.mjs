@@ -127,7 +127,7 @@ try {
   const widths = [240, 320, 375, 540, 768, 1440, 2560];
   const cardValue = expression => `(() => {const root=document.querySelector('#kibitz-card')?.shadowRoot;return ${expression};})()`;
   function fixture(lichess, gameId) {
-    const pgn = `[White "History White"]\n[Black "History Black"]\n[Result "1-0"]\n[Link "https://${lichess?'lichess.org/'+gameId:'www.chess.com/game/live/'+gameId}"]\n\n1. f3 e5 2. g4 Qh4# 0-1`;
+    const pgn = `[White "History White"]\n[Black "History Black"]\n[Result "0-1"]\n[Link "https://${lichess?'lichess.org/'+gameId:'www.chess.com/game/live/'+gameId}"]\n\n1. f3 e5 2. g4 Qh4# 0-1`;
     const chess = new Chess(), positions = [chess.fen()], moves = [];
     for (const san of ['f3','e5','g4','Qh4#']) { const m=chess.move(san); moves.push({san:m.san,uci:m.from+m.to+(m.promotion??'')}); positions.push(chess.fen()); }
     const allPieces = positions.map(fen => new Chess(fen).board().flat().filter(Boolean));
@@ -135,7 +135,7 @@ try {
     return `<!doctype html><html><head><title>Kibitz native board fixture</title><style>
       *{box-sizing:border-box}body{margin:0;padding:12px;font:16px system-ui;background:#f3f3ed;color:#242722}main{display:grid;grid-template-columns:minmax(0,640px) minmax(260px,1fr);gap:12px;max-width:1200px;margin:auto}.board-wrapper,.analyse__board{min-width:0}.board{display:block;position:relative;width:100%;aspect-ratio:1;background:conic-gradient(#769453 25%,#eeeccf 0 50%,#769453 0 75%,#eeeccf 0);background-size:25% 25%}.piece,piece{position:absolute;width:12.5%;height:12.5%;display:flex;align-items:center;justify-content:center;font-size:clamp(16px,5vw,46px);line-height:1;pointer-events:none}.site-controls{display:flex;align-items:center;gap:8px;min-height:48px;flex-wrap:wrap}.site-controls button,.move-list button{min-height:44px}aside{min-width:0;grid-column:2;grid-row:1 / span 2}.site-controls{grid-column:1;grid-row:2}.native-chat{padding:12px;background:#e3e7db;min-height:100px}button{font:inherit}.move-list{display:flex;gap:6px;flex-wrap:wrap}.node.active,move.active{outline:2px solid #456922}footer{max-width:1200px;margin:12px auto;padding:12px;background:#e0e6d9}body.dark{background:#242722;color:#eee}body.dark .native-chat,body.dark footer{background:#343c2d}@media(max-width:999px){main{grid-template-columns:minmax(0,1fr);grid-template-rows:auto 48px auto}.site-controls{height:48px}aside{grid-column:1;grid-row:auto}.native-chat{min-height:100px}}
       input{max-width:100%;min-width:0}
-    </style></head><body><header class="game__meta"><span class="result" data-result="1-0">1-0</span></header>
+    </style></head><body><header class="game__meta"><span class="result" data-result="0-1">0-1</span></header>
     <main class="${lichess?'round__app':'board-layout-main'}"><div class="${lichess?'analyse__board':'board-wrapper'}"><${boardTag} class="board"></${boardTag}></div><div class="site-controls board-controls" data-native-control><button id="native-prev">Previous</button><button id="native-next">Next</button><button id="native-flip">Flip</button><span class="clock">Finished</span></div><aside class="${lichess?'analyse__tools':'sidebar-component'}"><div class="move-list ${lichess?'analyse__moves':''}" data-native-control></div><div class="native-chat" data-native-control>Game notes and chat <input placeholder="Study notes"></div></aside></main>
     <footer data-native-control><button>Site navigation</button></footer><script type="application/x-chess-pgn">${pgn}</script>
     <script>
@@ -145,7 +145,7 @@ try {
       moves.forEach((move,index)=>{const el=document.createElement(lichess?'move':'button');el.className='node';el.dataset.ply=index+1;el.textContent=move.san;el.addEventListener('click',()=>select(index+1));list.append(el)});
       function select(ply){selected=Math.min(moves.length,Math.max(0,ply));board.dataset.fen=positions[selected];board.classList.toggle('flipped',black);wrapper.classList.toggle('orientation-black',black);board.replaceChildren();for(const p of pieces[selected]){const el=document.createElement(lichess?'piece':'div'),file=p.square.charCodeAt(0)-97,rank=Number(p.square[1]);el.className=lichess?(p.color==='w'?'white':'black')+' '+names[p.type]:'piece '+p.color+p.type+' square-'+(file+1)+rank;el.style.left=((black?7-file:file)*12.5)+'%';el.style.top=((black?rank-1:8-rank)*12.5)+'%';el.textContent=glyphs[p.color+p.type];board.append(el)}for(const el of list.children){el.classList.toggle('active',Number(el.dataset.ply)===selected);el.setAttribute('aria-current',String(Number(el.dataset.ply)===selected))}if(lichess){site.analysis.node={fen:positions[selected],ply:selected};site.analysis.path=String(selected);site.analysis.nodeList=positions.slice(0,selected+1).map((fen,ply)=>({fen,ply,san:ply?moves[ply-1].san:undefined}))}}
       window.site={analysis:{tree:{root:{fen:positions[0],ply:0}},node:{},path:''}};
-      if(!lichess)board.game={getFEN:()=>positions[selected],getSelectedNode:()=>({ply:selected}),getHistorySANs:()=>moves.slice(0,selected).map(m=>m.san),getPGN:()=>pgn,getHeaders:()=>({Result:'1-0',Link:location.href})};
+      if(!lichess)board.game={getFEN:()=>positions[selected],getSelectedNode:()=>({ply:selected}),getHistorySANs:()=>moves.slice(0,selected).map(m=>m.san),getPGN:()=>pgn,getHeaders:()=>({Result:'0-1',Link:location.href})};
       document.querySelector('#native-prev').onclick=()=>select(selected-1);document.querySelector('#native-next').onclick=()=>select(selected+1);document.querySelector('#native-flip').onclick=()=>{black=!black;select(selected)};window.selectFixture=select;select(1);
     </script></body></html>`;
   }
@@ -170,10 +170,10 @@ try {
     await until(()=>page.evaluate(cardValue('root?.querySelector("article > button")?.hidden === false')),'review launch button');
     await page.evaluate(cardValue('root.querySelector("article > button").click()'));
     await until(()=>page.evaluate(cardValue('root?.querySelector("h2").textContent.includes("·")')),'in-page Stockfish feedback',30000);
-    if (!failOpenings) await until(()=>page.evaluate(cardValue('root?.querySelector("details").textContent.includes("Opening so far:")')),'lazy opening metadata after immediate feedback');
+    if (!failOpenings) await until(()=>page.evaluate(cardValue('root?.querySelector("#guidance > details").textContent.includes("Opening so far:")')),'lazy opening metadata after immediate feedback');
     else {
       assert.ok(await page.evaluate(cardValue('!!root.querySelector(".explanation").textContent')), 'Missing opening data must not hide coaching');
-      assert.equal(await page.evaluate(cardValue('root.querySelector("details").textContent.includes("Opening so far:")')), false, 'Unavailable data must omit opening names');
+      assert.equal(await page.evaluate(cardValue('root.querySelector("#guidance > details").textContent.includes("Opening so far:")')), false, 'Unavailable data must omit opening names');
     }
     assert.equal(await page.evaluate(cardValue('getComputedStyle(root.querySelector("article")).borderTopWidth')), '2px');
     assert.equal(await page.evaluate('document.querySelectorAll("#kibitz-overlay [data-candidate-ranks],#kibitz-overlay path").length'), 0, 'Review must not draw candidate recommendations');
@@ -195,7 +195,7 @@ try {
     await page.evaluate('document.querySelector("#native-next").click();true');
     await until(()=>page.evaluate(cardValue('root?.querySelector("h2").textContent.startsWith("Pawn to E5")')),'native next move follows with settings closed',30000);
     assert.equal(await page.evaluate('document.querySelectorAll("#kibitz-overlay path").length'),0,'Review has no candidate arrows');
-    await page.evaluate(cardValue('root.querySelector("details").open=true'));
+    await page.evaluate(cardValue('root.querySelector("#guidance > details").open=true'));
     await page.evaluate(`document.querySelector('#kibitz-card').shadowRoot.querySelector('[data-ai]').click();true`);
     await until(()=>page.evaluate(cardValue(`root?.querySelector('.review-ai-text').textContent.includes('Explanation by') && !!root?.querySelector('.explanation').textContent`)),'optional in-page grounded AI wording',30000);
     await page.evaluate(`document.querySelector('#kibitz-card').shadowRoot.querySelector('[data-sweep]').click();true`);
@@ -207,7 +207,7 @@ try {
       throw error;
     }
     assert.ok(await page.evaluate('document.querySelector(".node.active").dataset.ply === "2"'));
-    await page.evaluate(cardValue('root.querySelector(".review-issues").open=true;root.querySelector("[data-issue-ply="+CSS.escape("3")+"]").click()'));
+    await page.evaluate(`const root=document.querySelector('#kibitz-card').shadowRoot;root.querySelector('.review-issues').open=true;root.querySelector('[data-issue-ply="3"]').click();true`);
     await until(()=>page.evaluate(cardValue('root.querySelector("h2").textContent.startsWith("Pawn to G4")')),'problem list selects the native played move',30000);
     assert.equal(await page.evaluate('document.querySelector(".node.active").dataset.ply'),'3');
     assert.equal(await page.evaluate('document.querySelector("#kibitz-overlay [data-marker] text").textContent'),'??');
@@ -223,7 +223,7 @@ try {
     };
     for(const width of widths){await page.send('Emulation.setDeviceMetricsOverride',{width,height:900,deviceScaleFactor:1,mobile:false});await checkPlacement(`${lichess?'Lichess':'Chess.com'} ${width}px`)}
     await page.send('Emulation.setDeviceMetricsOverride',{width:375,height:800,deviceScaleFactor:1,mobile:false});
-    await page.evaluate(`const root=document.querySelector('#kibitz-card').shadowRoot;root.querySelector('details').open=true;root.querySelector('.explanation').textContent='Long review explanation. '.repeat(30);true`);await checkPlacement('expanded narrow card');
+    await page.evaluate(`const root=document.querySelector('#kibitz-card').shadowRoot;root.querySelector('#guidance > details').open=true;root.querySelector('.explanation').textContent='Long review explanation. '.repeat(30);true`);await checkPlacement('expanded narrow card');
     await page.evaluate(`document.querySelector('#native-flip').click();true`);await checkPlacement('rotated native board');
     await page.evaluate(`document.body.classList.add('dark');document.querySelector('#kibitz-card').scrollIntoView({block:'center'});true`);await checkPlacement('dark narrow card');
     const shot=await page.send('Page.captureScreenshot',{format:'png'});await writeFile(join(profile,lichess?'lichess-native-review.png':'chesscom-native-review.png'),Buffer.from(shot.data,'base64'));
@@ -259,7 +259,7 @@ try {
         const state=await page.evaluate(`(() => {const host=document.querySelector('#kibitz-card'),card=host.getBoundingClientRect(),board=document.querySelector('wc-chess-board,chess-board,cg-board').getBoundingClientRect();const overlap=(a,b)=>Math.min(a.right,b.right)-Math.max(a.left,b.left)>1&&Math.min(a.bottom,b.bottom)-Math.max(a.top,b.top)>1;return {card:card.toJSON(),board:board.toJSON(),collisions:[...document.querySelectorAll('button,input,select,textarea')].filter(el=>!el.contains(host)&&overlap(card,el.getBoundingClientRect())).map(el=>({tag:el.tagName,cls:el.className})),overflow:card.left<0||card.right>innerWidth};})()`);
         assert.deepEqual(state.collisions,[],`${url} ${width}px collisions`);assert.ok(!state.overflow,`${url} ${width}px card outside viewport`);if(width<1000)assert.ok(state.card.top>=state.board.bottom-1,`${url} narrow card must be below board`);
       }
-      await page.evaluate('document.querySelector("#kibitz-card").shadowRoot.querySelector("details").open=true;document.querySelector("#kibitz-card").scrollIntoView({block:"center"});true');await wait(600);
+      await page.evaluate('document.querySelector("#kibitz-card").shadowRoot.querySelector("#guidance > details").open=true;document.querySelector("#kibitz-card").scrollIntoView({block:"center"});true');await wait(600);
       const shot=await page.send('Page.captureScreenshot',{format:'png'});await writeFile(join(profile,new URL(url).hostname+'.png'),Buffer.from(shot.data,'base64'));console.log(`PASS: actual ${url} card/control collision checks at 320–1440px`);
     }catch(error){console.log(`PUBLIC SITE CHECK INCOMPLETE: ${url}: ${error.message}`)}
     await controller.send('Target.closeTarget',{targetId});

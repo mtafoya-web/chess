@@ -118,7 +118,7 @@ export class Card {
         if (active) this.reviewControls.prepend(this.reviewLegend); else { this.layerControls.append(this.reviewLegend); this.reviewAIText.replaceChildren(); }
         this.reviewButton.hidden = active;
     }
-    showReview(result: Evaluation, feedback?: MoveFeedback, before?: Evaluation, san?: string, advice?: Evaluation, provenance?: string, fen?: string, beforeFen?: string) {
+    showReview(result: Evaluation, feedback?: MoveFeedback, before?: Evaluation, san?: string, advice?: Evaluation, fen?: string, beforeFen?: string) {
         this.show(advice ?? result, fen);
         this.heading.textContent = san ? `${beforeFen ? readableMove(beforeFen, san) : san} · ${reviewLabel(feedback?.label)}` : 'Starting position';
         this.evaluation.textContent = `${before ? `${before.evaluation} → ` : ''}${result.evaluation}`;
