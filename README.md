@@ -118,9 +118,19 @@ Existing keys migrate automatically: Kibitz saves them locally before removing t
 
 The selected move is analyzed first. Choose **Analyze whole game** on the card for a full pass, or pause it whenever you want. This does not move the website's board. Ratings are provisional Kibitz estimates from consistent local engine searches, not the site's own accuracy scores. Positive evaluations favor White, regardless of which player made the move.
 
-The gold-framed card uses readable labels such as **Knight to F3**. Review keeps its grade separate and acknowledges accurate moves briefly. Explanations of problem moves prioritize verified consequences. A **Better alternative from the previous position** appears only in Details for a problem move, with a short conditional line when legal. It never replaces the played move's heading or becomes a recommendation overlay.
+Explanations follow a consistent reading order within the existing text areas: the main takeaway, concrete effects on named pieces and squares, then a brief plain-language meaning. For example, a checking move names the attacked king before explaining what check requires. Attacks and possible captures are not presented as guaranteed material wins. Reviews lead with the played move's assessment and consequences; analysis explains the recommended move. The same wording rules apply to local explanations and approved AI fact selections. Supporting alternatives and review evaluation details remain in Details; this organization adds no controls or layout changes.
 
-Stockfish feedback works without an AI service. Click **Explain with AI** for optional wording using your configured Chrome AI, Ollama, or cloud fallback. Full-game analysis does not make an AI request for every move.
+Review explanations compare the played move with the preferred before-move continuation. They follow up to ten legal PV plies, account for exchanges and legal recaptures, and distinguish pre-existing tension from a newly exposed piece or a removed recapturer. An ordinary check, equal trade, or exchange cut off before a recapture does not become a material-loss warning. Verified forks, pinned recapturers, central recapture options, pawn pressure on development squares, and changed checking lines can supply specific context. These are bounded observations from the searched lines, not proof that every continuation has the same outcome. When those lines do not establish a cause, Kibitz says so briefly instead of inventing one.
+
+**Details** includes the numbered **One searched continuation** after the played move, with readable move names and search depth when available. The **Better alternative from the previous position** is a separate branch. For the reported `4. g3` central-tension example, a captured Stockfish search shows equal material after the displayed exchanges but fewer immediate recapture options on E4 than the preferred developing move; the pawn does not receive a misleading material-loss outline. Developers can refresh that local regression snapshot with `node scripts/capture-review-fixture.mjs` and inspect any changed search results before updating expectations.
+
+The **On the board** section explains the selected move in plain language, names each highlighted square and piece, and shows matching outline samples. For example: ?White moved the pawn from G2 to G4? and ?The gold outline marks White's king,? followed by the verified threat. Immediate replies are distinguished from events later in one possible continuation. A check alone does not mean a piece is lost or the game is over. The full symbol key is expandable; understanding the cues requires no hovering or color recognition. Evaluation changes appear in Details as pawn units, not as a count of pieces actually lost.
+
+The gold-framed card uses readable labels such as **Knight to F3**. Review keeps its grade separate and acknowledges accurate moves briefly. Explanations of problem moves prioritize verified consequences. A **Better alternative from the previous position** appears only in Details for a problem move, with its legally replayed continuation when available. It never replaces the played move's heading or becomes a recommendation overlay.
+
+AI explanations run automatically for analysis and each verified selected move in supported native navigation. Automatic mode tries Chrome AI, then Ollama, then your configured cloud service when its key and host permission are available. Rapid navigation cancels obsolete work; only the settled selection is explained. Verified feedback remains visible while AI prepares its explanation. Full-game background analysis gathers evidence without making an AI request for every move; selecting a move requests its explanation.
+
+If eligible providers fail or return unsupported claims, Kibitz shows verified application wording with an explicit fallback status. The automatic provider chain has a 45-second overall deadline. The explanation button retries AI, and revisiting a move retries a previous fallback. Successful validated plans are cached in offscreen memory for five minutes (up to 40 entries), keyed by the full evidence and provider. Model, credential, provider or settings changes invalidate them. Cloud permission is checked before a cached cloud plan is reused.
 
 Review works with the settings panel closed. It uses consistent local Stockfish comparisons rather than website candidate suggestions. Alternatives remain notation in Details; Kibitz does not draw future positions or recommendation arrows over the review board. A completed-game page waits for **Review with Kibitz** instead of starting ordinary suggestions. To explore recommended moves, open an analysis or study board.
 
@@ -191,7 +201,7 @@ node scripts/browser-smoke.mjs
 node scripts/browser-smoke.mjs --fail-openings
 ```
 
-This uses a separate temporary browser profile. It checks the real Stockfish engine, in-page review with settings closed, native move selection, grounded explanations with mock providers, saved overlay toggles, website theme relay, whole-game analysis, adjacent placement and card/control collisions at 240 to 2560 pixels, 200% zoom, using intercepted Chess.com and Lichess fixtures. It also verifies local credential migration, manifest-loaded content scripts, detected FENs, and authenticated background/offscreen message flow. The default run needs no site accounts, cloud connection, or downloaded AI model. Add `--live-sites` to optionally probe public analysis pages. Regular Chrome may block loading extensions this way. The test does not download or verify a real Gemini Nano model. `node scripts/capture-probe.mjs` optionally inspects public game capture and native state; access and page layouts can change. `node scripts/native-engine-probe.mjs` checks populated Lichess analysis in an isolated profile; that diagnostic explicitly toggles the site's engine, while the extension's adapter only reads existing results.
+This uses a separate temporary browser profile. It checks the real Stockfish engine, in-page review with settings closed, native move selection, grounded explanations with mock providers, saved overlay toggles, website theme relay, whole-game analysis, docking below native notation, scroll/resize revalidation, and card/control collisions at 240 to 2560 pixels, 200% zoom, using intercepted Chess.com and Lichess fixtures. It also verifies local credential migration, manifest-loaded content scripts, detected FENs, and authenticated background/offscreen message flow. The default run needs no site accounts, cloud connection, or downloaded AI model. Add `--live-sites` to optionally probe public analysis pages. Regular Chrome may block loading extensions this way. The test does not download or verify a real Gemini Nano model. `node scripts/capture-probe.mjs` optionally inspects public game capture and native state; access and page layouts can change. `node scripts/native-engine-probe.mjs` checks populated Lichess analysis in an isolated profile; that diagnostic explicitly toggles the site's engine, while the extension's adapter only reads existing results.
 
 Before a release, also check both sites in light and dark themes, with narrow and wide windows and browser zoom. Try rotating and resizing boards, changing positions and tabs, closing and reopening the card, provider failures, finished positions, and restarting the extension's background worker. Website layouts can change, so automated checks do not cover every case.
 
@@ -231,7 +241,7 @@ The internal Best and Excellent grades are both displayed as **Accurate** during
 
 The application legally replays history, constructs the current piece inventory, and detects supported effects: captures, checks, development, central influence, cleared bishop/queen lines, and castling preparation. An attacked piece is not automatically lost. A positional benefit is not proof that a move is uniquely best, and hypothetical replies are not predictions.
 
-Providers return a small JSON plan naming approved facts and a controlled tone variant. Kibitz validates those references and renders the chess statements itself. Unsupported plans fall directly back to application wording; they do not trigger more paid requests. Failed partial output is never displayed. The validated paragraph replaces the main explanation rather than appending a duplicate.
+Providers receive the verified before/after positions, recent verified history, played and preferred moves, mover-relative evaluation change, search depths, distinct PV branches, and approved cause facts. They return a small JSON plan naming approved facts, optional supporting step indices, and a controlled tone variant. Kibitz validates those references against the selected cause and actual-line steps and renders the chess statements itself. Unsupported plans advance to the next eligible provider in automatic mode; an explicitly selected provider falls back directly to verified wording. Failed partial output is never displayed. The validated paragraph replaces the main explanation rather than appending a duplicate. AI chooses the teaching focus from approved facts; native engine evidence or local Stockfish supplies evaluations and legal searched lines. This limits unsupported model claims without guaranteeing that evidence generation itself is error-free.
 
 History is scoped to the selected move. Going backward restores pieces and removes later captures. A FEN alone cannot establish past captures or the game's opening. Custom-start games retain only the history following that starting position.
 
@@ -272,7 +282,7 @@ No new permissions are required for lazy opening data or the gold knight icon. T
 | Stockfish worker | Locally packaged UCI engine and WASM search | `engine.ts`, `dist/engine/` |
 | Side panel | Setup, credential changes, capture/import controls, manual FEN results | `sidepanel.ts`, `sidepanel.html` |
 
-A page position travels through background to offscreen analysis, then returns to its source tab. Content displays verified factual guidance immediately; optional validated AI wording replaces it afterward. Manual FEN results return to the panel instead. Only one engine/analysis job is active at a time.
+A page position travels through background to offscreen analysis, then returns to its source tab. Content displays verified factual guidance immediately; automatically requested, validated AI wording replaces it afterward. Analysis and review share the explanation pipeline, using typed pending, ready, fallback and failed events correlated with the request and position. Manual FEN results return to the panel instead. Only one engine/analysis job is active at a time.
 
 Review legally replays game history and keeps the native board authoritative. Opening metadata can accompany a cached result or arrive later as `REVIEW_OPENING`; it is checked against the matching session, request, ply, and verified current board. Late metadata from a canceled request is discarded, and matching cached results retain their metadata.
 
@@ -286,12 +296,12 @@ The content bundle remains a standalone IIFE. Extension pages share ESM chunks. 
 
 Representative raw sizes, rounded to decimal KB/MB:
 
-| Asset | Before | After |
+| Asset | Before | Current |
 | --- | ---: | ---: |
-| Content JavaScript | 766 KB | 105 KB |
-| Offscreen JavaScript | 688 KB | 31 KB |
+| Content JavaScript | 766 KB | 124 KB |
+| Offscreen JavaScript | 688 KB | 44 KB |
 | Opening index | Embedded twice | One 660 KB lazy data asset |
-| Entire extension | 8.91 MB | 8.24 MB |
+| Entire extension | 8.91 MB | 8.28 MB |
 | Stockfish WASM | 7.28 MB | 7.28 MB |
 
 The exact baseline is in `docs/bundle-baseline.json`. Current sizes vary with edits; use the report for exact figures. Gzip sizes describe compression potential, not parsing cost, runtime memory, or guaranteed Chrome Web Store package size. Some chess-rule code remains in both isolated contexts because content still needs legal verification.

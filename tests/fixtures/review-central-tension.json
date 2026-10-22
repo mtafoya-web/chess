@@ -1,0 +1,236 @@
+{
+  "engine": "Stockfish 17.1 lite single",
+  "movetime": 1500,
+  "multiPV": 3,
+  "history": [
+    "e2e4",
+    "e7e6",
+    "d2d3",
+    "d7d5",
+    "g1f3",
+    "f7f5",
+    "g2g3"
+  ],
+  "move": {
+    "ply": 7,
+    "san": "g3",
+    "uci": "g2g3",
+    "color": "w",
+    "beforeFen": "rnbqkbnr/ppp3pp/4p3/3p1p2/4P3/3P1N2/PPP2PPP/RNBQKB1R w KQkq - 0 4",
+    "afterFen": "rnbqkbnr/ppp3pp/4p3/3p1p2/4P3/3P1NP1/PPP2P1P/RNBQKB1R b KQkq - 0 4"
+  },
+  "before": [
+    {
+      "uci": "b1c3",
+      "san": "Nc3",
+      "uciPv": [
+        "b1c3",
+        "d5e4",
+        "d3e4",
+        "d8d1",
+        "e1d1",
+        "f5e4",
+        "c3e4",
+        "g8f6",
+        "f1b5",
+        "c8d7"
+      ],
+      "sanPv": [
+        "Nc3",
+        "dxe4",
+        "dxe4",
+        "Qxd1+",
+        "Kxd1",
+        "fxe4",
+        "Nxe4",
+        "Nf6",
+        "Bb5+",
+        "Bd7"
+      ],
+      "pv": "Nc3 dxe4 dxe4 Qxd1+ Kxd1 fxe4 Nxe4 Nf6 Bb5+ Bd7",
+      "depth": 17,
+      "score": 0.59,
+      "engineScore": {
+        "kind": "cp",
+        "value": 59
+      }
+    },
+    {
+      "uci": "e4f5",
+      "san": "exf5",
+      "uciPv": [
+        "e4f5",
+        "e6f5",
+        "g2g3",
+        "f8d6",
+        "b1c3",
+        "g8f6",
+        "d1e2",
+        "e8f7",
+        "f3g5",
+        "f7g8"
+      ],
+      "sanPv": [
+        "exf5",
+        "exf5",
+        "g3",
+        "Bd6",
+        "Nc3",
+        "Nf6",
+        "Qe2+",
+        "Kf7",
+        "Ng5+",
+        "Kg8"
+      ],
+      "pv": "exf5 exf5 g3 Bd6 Nc3 Nf6 Qe2+ Kf7 Ng5+ Kg8",
+      "depth": 16,
+      "score": 0.6,
+      "engineScore": {
+        "kind": "cp",
+        "value": 60
+      }
+    },
+    {
+      "uci": "e4d5",
+      "san": "exd5",
+      "uciPv": [
+        "e4d5",
+        "e6d5",
+        "g2g3",
+        "f8d6",
+        "b1c3",
+        "g8f6",
+        "d1e2",
+        "e8f7",
+        "f3g5",
+        "f7g8"
+      ],
+      "sanPv": [
+        "exd5",
+        "exd5",
+        "g3",
+        "Bd6",
+        "Nc3",
+        "Nf6",
+        "Qe2+",
+        "Kf7",
+        "Ng5+",
+        "Kg8"
+      ],
+      "pv": "exd5 exd5 g3 Bd6 Nc3 Nf6 Qe2+ Kf7 Ng5+ Kg8",
+      "depth": 16,
+      "score": 0.6,
+      "engineScore": {
+        "kind": "cp",
+        "value": 60
+      }
+    }
+  ],
+  "after": [
+    {
+      "uci": "d5e4",
+      "san": "dxe4",
+      "uciPv": [
+        "d5e4",
+        "d3e4",
+        "d8d1",
+        "e1d1",
+        "f5e4",
+        "f3g5",
+        "e6e5",
+        "b1c3",
+        "c8f5",
+        "c3e4"
+      ],
+      "sanPv": [
+        "dxe4",
+        "dxe4",
+        "Qxd1+",
+        "Kxd1",
+        "fxe4",
+        "Ng5",
+        "e5",
+        "Nc3",
+        "Bf5",
+        "Ncxe4"
+      ],
+      "pv": "dxe4 dxe4 Qxd1+ Kxd1 fxe4 Ng5 e5 Nc3 Bf5 Ncxe4",
+      "depth": 17,
+      "score": -0.28,
+      "engineScore": {
+        "kind": "cp",
+        "value": -28
+      }
+    },
+    {
+      "uci": "f8b4",
+      "san": "Bb4+",
+      "uciPv": [
+        "f8b4",
+        "c2c3",
+        "d5e4",
+        "c3b4",
+        "e4f3",
+        "b1d2",
+        "b8c6",
+        "d2f3",
+        "c6b4",
+        "a2a3"
+      ],
+      "sanPv": [
+        "Bb4+",
+        "c3",
+        "dxe4",
+        "cxb4",
+        "exf3",
+        "Nd2",
+        "Nc6",
+        "Nxf3",
+        "Nxb4",
+        "a3"
+      ],
+      "pv": "Bb4+ c3 dxe4 cxb4 exf3 Nd2 Nc6 Nxf3 Nxb4 a3",
+      "depth": 17,
+      "score": 0.32,
+      "engineScore": {
+        "kind": "cp",
+        "value": 32
+      }
+    },
+    {
+      "uci": "f5e4",
+      "san": "fxe4",
+      "uciPv": [
+        "f5e4",
+        "d3e4",
+        "b8c6",
+        "e4d5",
+        "e6d5",
+        "f1g2",
+        "g8f6",
+        "e1g1",
+        "f8e7",
+        "f1e1"
+      ],
+      "sanPv": [
+        "fxe4",
+        "dxe4",
+        "Nc6",
+        "exd5",
+        "exd5",
+        "Bg2",
+        "Nf6",
+        "O-O",
+        "Be7",
+        "Re1"
+      ],
+      "pv": "fxe4 dxe4 Nc6 exd5 exd5 Bg2 Nf6 O-O Be7 Re1",
+      "depth": 16,
+      "score": 0.65,
+      "engineScore": {
+        "kind": "cp",
+        "value": 65
+      }
+    }
+  ]
+}
