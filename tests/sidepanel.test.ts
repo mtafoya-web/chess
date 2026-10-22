@@ -96,7 +96,7 @@ it('allows the first late website palette and rematches on active-page reload', 
     themeEvent({type:'SITE_THEME',theme:{...theme,background:'#fafafa',dark:false}});
     expect(document.documentElement.style.getPropertyValue('--k-bg')).toBe('#fafafa');
 });
-it('ignores move hashes but unlocks on navigation within the website', async () => {
+it('preserves the theme through move hashes and unlocks on navigation within the website', async () => {
     const theme = {site:'lichess',background:'#181818',foreground:'#eeeeee',accent:'#a0c66a',radius:'4px',fontFamily:'sans-serif',dark:true};
     themeEvent({type:'SITE_THEME',theme});
     updateTab(12, {url:'https://lichess.org/analysis#12'}); await new Promise(resolve => setTimeout(resolve, 0));
@@ -105,6 +105,34 @@ it('ignores move hashes but unlocks on navigation within the website', async () 
     updateTab(12, {url:'https://lichess.org/another-game'}); await new Promise(resolve => setTimeout(resolve, 0));
     themeEvent({type:'SITE_THEME',theme:{...theme,background:'#fafafa',dark:false}});
     expect(document.documentElement.style.getPropertyValue('--k-bg')).toBe('#fafafa');
+});
+it('ignores a late theme lookup from the previous active tab', async () => {
+    const old = {...activeThemeTab};
+    let finish!: (value:{tabId:number;url:string;theme?:unknown}) => void;
+    lookupTheme = () => new Promise(resolve => {finish=resolve;});
+    activate(); await new Promise(resolve => setTimeout(resolve,0));
+    activeThemeTab = {id:99,url:'https://www.chess.com/analysis'};
+    const theme = {site:'chesscom',background:'#f8f8f8',foreground:'#222222',accent:'#496f24',radius:'8px',fontFamily:'serif',dark:false};
+    lookupTheme = async () => ({tabId:99,url:activeThemeTab.url,theme});
+    activate(); await new Promise(resolve => setTimeout(resolve,0));
+    finish({tabId:old.id,url:old.url,theme:{...theme,site:'lichess',background:'#181818',dark:true}});
+    await new Promise(resolve => setTimeout(resolve,0));
+    expect(document.documentElement.style.getPropertyValue('--k-bg')).toBe('#f8f8f8');
+    expect(document.documentElement.style.getPropertyValue('--k-gold')).toBe('#98701e');
+    expect(document.documentElement.dataset.site).toBe('chesscom');
+});
+it('ignores an old-page theme push while the current page theme is loading', async () => {
+    const old = {...activeThemeTab};
+    activeThemeTab = {id:12,url:'https://lichess.org/other'};
+    let finish!: (value:{tabId:number;url:string;theme?:unknown}) => void;
+    lookupTheme = () => new Promise(resolve => {finish=resolve;});
+    updateTab(12,{url:activeThemeTab.url}); await new Promise(resolve => setTimeout(resolve,0));
+    const theme = {site:'lichess',background:'#181818',foreground:'#eeeeee',accent:'#82a958',radius:'4px',fontFamily:'sans-serif',dark:true};
+    listeners[0]({type:'SITE_THEME',tabId:old.id,url:old.url,theme:{...theme,background:'#333333'}});
+    finish({tabId:12,url:activeThemeTab.url,theme}); await new Promise(resolve => setTimeout(resolve,0));
+    expect(document.documentElement.style.getPropertyValue('--k-bg')).toBe('#181818');
+    expect(document.documentElement.style.getPropertyValue('--k-gold')).toBe('#d5b45d');
+    expect(document.documentElement.style.getPropertyValue('--k-accent')).toBe('#82a958');
 });
 it('loads flags without filling saved keys and preserves, replaces, and removes credentials explicitly', async () => {
     const key = document.getElementById('key') as HTMLInputElement;

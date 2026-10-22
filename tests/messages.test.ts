@@ -2,9 +2,16 @@ import { beforeEach, expect, it, vi } from 'vitest';
 import { Chess } from 'chess.js';
 import { evaluation } from '../src/chess';
 import { DEFAULT_SETTINGS } from '../src/types';
-import { canSendRequest, contextFor, isAnalysisEvent, isBackgroundRequest, isBackgroundSender, isContentMessage, isOffscreenCommand } from '../src/messages';
+import { canSendRequest, contextFor, isAnalysisEvent, isBackgroundRequest, isBackgroundSender, isContentMessage, isOffscreenCommand, isPanelMessage } from '../src/messages';
 const fen = new Chess().fen();
 const analysis = { type: 'ANALYSIS_REQUEST', requestId: 'opaque', fen, orientation: 'white' };
+it('requires tab and page identity on panel theme messages', () => {
+    const message = {type:'SITE_THEME',tabId:12,url:'https://lichess.org/analysis'};
+    expect(isPanelMessage(message)).toBe(true);
+    expect(isPanelMessage({type:'SITE_THEME'})).toBe(false);
+    expect(isPanelMessage({...message,tabId:'12'})).toBe(false);
+    expect(isPanelMessage({...message,url:undefined})).toBe(false);
+});
 it('validates explanation completion states and their position, source and review selection', () => {
     const state = {type:'EXPLANATION_STATE',requestId:'opaque',tabId:1,fen,state:'ready',provider:'chrome'};
     expect(isAnalysisEvent(state)).toBe(true);
