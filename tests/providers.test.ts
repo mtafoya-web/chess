@@ -1,9 +1,10 @@
 import { afterEach, expect, it, vi } from 'vitest';
-import { deltaFrom, explain, records } from '../src/providers';
+import { clearExplanationCache, deltaFrom, explain, records } from '../src/providers';
 import { DEFAULT_SETTINGS, settingsFrom, type Evaluation } from '../src/types';
-import { DEFAULT_POSITION } from 'chess.js';
+import { candidateFrom, evaluation as makeEvaluation } from '../src/chess';
+import { Chess, DEFAULT_POSITION } from 'chess.js';
 
-afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers(); });
+afterEach(() => { clearExplanationCache(); vi.unstubAllGlobals(); vi.useRealTimers(); });
 const result: Evaluation = { bestMove: 'e2e4', pvLines: [], promisingMoves: [], evaluation: '+0.2', candidates: [], whiteScore: 0.2 };
 const settings = () => ({ ...structuredClone(DEFAULT_SETTINGS), keys: {} as Partial<Record<'gemini' | 'openai' | 'groq', string>> });
 const response = (text: string) => new Response(text, { status: 200 });
@@ -93,14 +94,16 @@ it.each([
 ] as const)('rejects malformed decoded provider JSON: %s', (record, provider) => {
     expect(() => deltaFrom(record, provider)).toThrow('invalid response');
 });
-it('reports invalid completed plans safely and immediately falls back without paid requests', async () => {
+it('reports invalid plans and skips cloud inference without permission', async () => {
     unavailable(); const config = settings(); config.keys.gemini = 'credential-secret';
+    vi.stubGlobal('chrome', { runtime: { sendMessage: async () => ({ granted: false }) } });
     const fetch = vi.fn(async () => response('{"response":"unchecked secret model prose"}\n'));
     vi.stubGlobal('fetch', fetch); const report = vi.fn();
     expect(await explain(config, DEFAULT_POSITION, result, new AbortController().signal, () => {}, () => {}, undefined, report)).toBe('facts');
     expect(fetch).toHaveBeenCalledOnce();
     expect(report.mock.calls.map(([value]) => value)).toEqual([
         { code: 'PROVIDER_UNAVAILABLE', provider: 'chrome' }, { code: 'INVALID_PROVIDER_RESPONSE', provider: 'ollama' },
+        { code: 'PROVIDER_UNAVAILABLE', provider: 'gemini' },
     ]);
     expect(JSON.stringify(report.mock.calls)).not.toContain('secret');
 });
@@ -160,4 +163,16 @@ it('cancels a stalled permission check and ignores a late grant', async () => {
     controller.abort(); await expect(promise).rejects.toThrow(); grant({ granted: true });
     await Promise.resolve(); await Promise.resolve();
     expect(fetch).not.toHaveBeenCalled(); expect(report).not.toHaveBeenCalled();
+});
+
+it('falls back locally when an analysis provider selects a castling side absent from the legal PV',async()=>{
+    const board=new Chess();for(const san of ['e4','c5','Nf3','g6','Nc3'])board.move(san);
+    const evaluated=makeEvaluation([candidateFrom('info depth 17 score cp 20 pv b8c6 d2d4 c5d4 f3d4 f8g7 c1e3 g8f6 f1c4 e8g8 c4b3',board.fen())!.candidate]);
+    const fetcher=vi.fn();vi.stubGlobal('fetch',fetcher);
+    vi.stubGlobal('LanguageModel',{availability:async()=> 'available',create:async()=>({destroy:vi.fn(),promptStreaming:()=>new ReadableStream({start(c){c.enqueue(JSON.stringify({leadFactId:'recommended.move',supportFactId:'recommended.castling.queenside',toneVariant:'direct'}));c.close();}})})});
+    const output:string[]=[];
+    expect(await explain({...settings(),provider:'chrome'},board.fen(),evaluated,new AbortController().signal,text=>output.push(text))).toBe('facts');
+    expect(output.join('')).toContain('castle kingside with O-O');
+    expect(output.join('')).not.toMatch(/queenside castling|castle long/i);
+    expect(fetcher).not.toHaveBeenCalled();
 });

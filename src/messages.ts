@@ -36,6 +36,11 @@ export function isAnalysisEvent(v: unknown): v is AnalysisEvent | ReviewEvent {
     if (!record(v) || !text(v.requestId) || !Number.isInteger(v.tabId) || !text(v.type) || (v.diagnostic !== undefined && !isDiagnostic(v.diagnostic))) return false;
     if (v.type.startsWith('REVIEW_') && !text(v.sessionId)) return false;
     switch (v.type) {
+        case 'EXPLANATION_STATE': case 'REVIEW_EXPLANATION_STATE':
+            return isFen(v.fen) && (v.type !== 'REVIEW_EXPLANATION_STATE' || integer(v.ply)) && (
+                member(v.state, ['pending', 'failed']) && v.provider === undefined
+                || v.state === 'ready' && member(v.provider, ['chrome', ...Object.keys(ORIGINS)])
+                || v.state === 'fallback' && v.provider === 'facts');
         case 'REVIEW_OPENING': return integer(v.ply) && isOpeningContext(v.opening);
         case 'ENGINE_RESULT': return isEvaluation(v.result);
         case 'STREAM_CHUNK': return boundedText(v.textDelta, 10000) && typeof v.isComplete === 'boolean';
@@ -63,10 +68,10 @@ export function isBackgroundRequest(v: unknown): v is BackgroundRequest {
         default: return true;
     }
 }
-export type OffscreenCommand = EngineJob | ReviewJob | { target: 'offscreen'; type: 'ENGINE_CANCEL' };
+export type OffscreenCommand = EngineJob | ReviewJob | { target: 'offscreen'; type: 'ENGINE_CANCEL' | 'EXPLANATION_RESET' };
 export function isOffscreenCommand(v: unknown): v is OffscreenCommand {
     if (!record(v) || v.target !== 'offscreen') return false;
-    if (v.type === 'ENGINE_CANCEL') return true;
+    if (v.type === 'ENGINE_CANCEL' || v.type === 'EXPLANATION_RESET') return true;
     if (!record(v.settings) || !isSettings(Object.fromEntries(Object.entries(v.settings).filter(([k]) => k !== 'keys'))) || !record(v.settings.keys) || !Object.entries(v.settings.keys).every(([p,k]) => member(p, ['gemini','openai','groq']) && text(k,2048)) || !Number.isInteger(v.tabId) || (v.manual !== undefined && typeof v.manual !== 'boolean') || (v.nativeEvaluation !== undefined && !isEvaluation(v.nativeEvaluation))) return false;
     return v.type === 'ENGINE_START' ? text(v.requestId) && isFen(v.fen) && typeof v.manual === 'boolean' : v.type === 'REVIEW_START' && isBackgroundRequest(v.request) && v.request.type === 'REVIEW_ANALYZE';
 }

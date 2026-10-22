@@ -5,6 +5,15 @@ import { DEFAULT_SETTINGS } from '../src/types';
 import { canSendRequest, contextFor, isAnalysisEvent, isBackgroundRequest, isBackgroundSender, isContentMessage, isOffscreenCommand } from '../src/messages';
 const fen = new Chess().fen();
 const analysis = { type: 'ANALYSIS_REQUEST', requestId: 'opaque', fen, orientation: 'white' };
+it('validates explanation completion states and their position, source and review selection', () => {
+    const state = {type:'EXPLANATION_STATE',requestId:'opaque',tabId:1,fen,state:'ready',provider:'chrome'};
+    expect(isAnalysisEvent(state)).toBe(true);
+    expect(isAnalysisEvent({...state,state:'fallback',provider:'facts'})).toBe(true);
+    expect(isAnalysisEvent({...state,state:'pending',provider:undefined})).toBe(true);
+    for (const bad of [{...state,provider:'facts'},{...state,state:'fallback'},{...state,state:'pending'},
+        {...state,state:'complete'},{...state,fen:'wrong'}, {...state,type:'REVIEW_EXPLANATION_STATE',sessionId:'game'}]) expect(isAnalysisEvent(bad)).toBe(false);
+    expect(isAnalysisEvent({...state,type:'REVIEW_EXPLANATION_STATE',sessionId:'game',ply:1})).toBe(true);
+});
 it('bounds opening metadata without accepting malformed nested matches', () => {
     const event = {type:'REVIEW_OPENING',requestId:'opaque',sessionId:'game',tabId:1,ply:1,opening:{current:{eco:'B00',name:"King's Pawn",ply:1,match:'sequence'}}};
     expect(isAnalysisEvent(event)).toBe(true);

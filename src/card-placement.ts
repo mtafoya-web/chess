@@ -1,4 +1,5 @@
-﻿/** A normal-flow allocation owned by Kibitz; never put guidance into a board's grid row. */
+﻿const NATIVE_LAYOUT = '.analyse__tools, .analysis-sidebar, .sidebar-component, .analyse__controls, .board-controls, .board-layout-controls, .move-list, .vertical-move-list, .analyse__moves, .tview2, .round__moves, .evaluation-bar, .eval-bar, [data-native-control]';
+/** A normal-flow allocation owned by Kibitz; never put guidance into a board's grid row. */
 export class CardPlacement {
     readonly slot = document.createElement('div');
     private board?: HTMLElement;
@@ -11,24 +12,33 @@ export class CardPlacement {
     private retryRequested = false;
     private lichess = false;
     private destroyed = false;
-    private resize = new ResizeObserver(() => {
+    private schedule = () => {
         if (this.frame !== undefined || this.destroyed) return;
         this.frame = requestAnimationFrame(() => {
             this.frame = undefined;
-            if (this.board?.isConnected && this.slot.isConnected) this.validate();
+            if (this.board?.isConnected && this.slot.isConnected) this.attach(this.board, this.lichess);
         });
-    });
+    };
+    private resize = new ResizeObserver(this.schedule);
     constructor(private readonly host: HTMLElement) {
         this.slot.dataset.kibitzSlot = '';
         this.slot.style.cssText = 'display:flow-root;position:relative;box-sizing:border-box;width:100%;min-width:0;max-width:100%;height:auto;flex:0 0 auto;grid-column:1 / -1;clear:both;';
         this.resize.observe(host);
+        window.addEventListener('scroll', this.schedule, {passive: true, capture: true});
+        window.addEventListener('resize', this.schedule, {passive: true});
     }
     attach(board: HTMLElement, lichess: boolean) {
         if (this.destroyed || !board.isConnected) return;
         const viewport = document.documentElement.clientWidth || innerWidth;
         const layoutChanged = this.board !== board || this.viewport !== viewport || !this.slot.isConnected;
         const changed = layoutChanged || this.retryRequested;
-        if (layoutChanged) this.retryUsed = false;
+        if (layoutChanged) {
+            this.retryUsed = false;
+            this.resize.disconnect(); this.resize.observe(this.host);
+            for (const element of [...document.querySelectorAll<HTMLElement>(NATIVE_LAYOUT)].slice(0, 80)) {
+                if (!element.contains(this.host) && !this.host.contains(element)) this.resize.observe(element);
+            }
+        }
         this.retryRequested = false;
         this.board = board; this.viewport = viewport; this.lichess = lichess;
         if (this.host.parentElement !== this.slot) this.slot.append(this.host);
@@ -64,11 +74,11 @@ export class CardPlacement {
         wrapper.dataset.kibitzColumn = '';
         wrapper.style.cssText = 'display:flex;flex-direction:column;gap:12px;min-width:0;align-self:start;position:relative;';
         wrapper.style.gridArea = style.gridArea;
-        candidate.before(wrapper); wrapper.append(this.slot, candidate);
+        candidate.before(wrapper); wrapper.append(candidate, this.slot);
         this.reservation = { wrapper, candidate };
         const after = board.getBoundingClientRect(), card = this.host.getBoundingClientRect();
         if (Math.abs(before.width - after.width) <= 1 && Math.abs(before.height - after.height) <= 1
-            && card.top < before.bottom && card.bottom > before.top && !rectanglesOverlap(card, after)
+            && !rectanglesOverlap(card, after)
             && this.provesGrowth(wrapper) && this.isAllocated() && !placementCollisions(this.host).length) {
             this.adjacent = wrapper; return true;
         }
@@ -164,6 +174,8 @@ export class CardPlacement {
     }
     destroy() {
         this.destroyed = true; this.resize.disconnect();
+        window.removeEventListener('scroll', this.schedule, true);
+        window.removeEventListener('resize', this.schedule);
         if (this.frame !== undefined) cancelAnimationFrame(this.frame);
         if (this.retryFrame !== undefined) cancelAnimationFrame(this.retryFrame);
         this.releaseReservation(); this.slot.remove(); this.board = undefined;
@@ -177,7 +189,7 @@ export function rectanglesOverlap(a: DOMRect, b: DOMRect): boolean {
 /** Geometry diagnostic shared with browser checks. Shadow-root controls are excluded. */
 export function placementCollisions(host: HTMLElement, scope: ParentNode = document): HTMLElement[] {
     const card = host.getBoundingClientRect();
-    return [...scope.querySelectorAll<HTMLElement>('button, input, select, textarea, .analyse__controls, .board-controls, .board-layout-controls')]
+    return [...scope.querySelectorAll<HTMLElement>(`button, input, select, textarea, ${NATIVE_LAYOUT}, cg-board, wc-chess-board, chess-board`)]
         .filter(element => !host.contains(element) && !element.contains(host) && getComputedStyle(element).visibility !== 'hidden'
             && rectanglesOverlap(card, element.getBoundingClientRect()));
 }

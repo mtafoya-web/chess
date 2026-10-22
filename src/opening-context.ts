@@ -3,6 +3,8 @@ import { playUci } from './chess';
 import type { BoardHistory } from './board-context';
 
 export interface OpeningMatch { eco: string; name: string; ply: number; match: 'sequence' | 'transposition'; purpose?: string }
+export interface AnalysisOpeningMatch {eco: string; name: string; fen: string; source: 'local-position-match'}
+export interface AnalysisOpeningContext {currentPosition?: AnalysisOpeningMatch; recommendedPosition?: AnalysisOpeningMatch; pvPosition?: AnalysisOpeningMatch & {step: number}}
 export interface OpeningContext { current?: OpeningMatch; entered?: OpeningMatch }
 export type OpeningRow = [string, string, string, string];
 type Row = OpeningRow;
@@ -48,5 +50,29 @@ export function createOpeningLookup(rows: OpeningRow[]) {
             return { current: recognized, entered: current && current.ply === prefix.length && suggested ? current : undefined };
         } catch { return {}; }
     }
-    return openingContext;
+    function positionContext(fen: string, suggested?: string, pv?: string[]): AnalysisOpeningContext {
+        const unique = (board: Chess): AnalysisOpeningMatch | undefined => {
+            const key = board.fen().split(' ').slice(0, 4).join(' ');
+            const matches = new Map((positions.get(key) ?? []).map(row => [`${row[0]}:${row[1]}`, row]));
+            if (matches.size !== 1) return;
+            const row = [...matches.values()][0];
+            return {eco: row[0], name: row[1], fen: board.fen(), source: 'local-position-match'};
+        };
+        try {
+            const board = new Chess(fen), currentPosition = unique(board);
+            if (!suggested) return {currentPosition};
+            playUci(board, suggested);
+            const recommendedPosition = unique(board);
+            let pvPosition: AnalysisOpeningContext['pvPosition'];
+            if (pv?.[0] === suggested) {
+                for (const [index, uci] of pv.slice(1, 10).entries()) {
+                    try { playUci(board, uci); } catch { break; }
+                    const found = unique(board);
+                    if (found) {pvPosition = {...found, step: index + 1}; break;}
+                }
+            }
+            return {currentPosition, recommendedPosition, pvPosition};
+        } catch { return {}; }
+    }
+    return Object.assign(openingContext, {positionContext});
 }

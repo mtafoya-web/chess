@@ -2,9 +2,16 @@ import { ORIGINS, type Evaluation, type ExecutionSettings, type Provider, type R
 import { diagnostic, createDiagnosticReporter, type DiagnosticReporter } from './diagnostics';
 import { explainWithChrome } from './chrome-ai';
 import { buildExplanationFacts, type ReviewFacts } from './explanation-facts';
-import { coachPrompt, renderExplanation, validatePlan } from './coach-prompt';
+import { COACH_PROFILE, coachPrompt, renderExplanation, validatePlan, type ExplanationPlan } from './coach-prompt';
+import { PROVIDER_NAMES } from './explanation-state';
 
-export const PROVIDER_NAMES: Record<Provider | 'facts', string> = { facts: 'Kibitz ? verified facts', chrome: 'Chrome AI · local', ollama: 'Ollama · local', gemini: 'Gemini · cloud', openai: 'OpenAI · cloud', groq: 'Groq · cloud' };
+export { PROVIDER_NAMES } from './explanation-state';
+
+// Offscreen-memory only. Cache approved plans, never failed attempts or rendered fallbacks.
+const plans = new Map<string, { plan: ExplanationPlan; expires: number }>();
+let configuration = '';
+export function clearExplanationCache() { plans.clear(); configuration = ''; }
+export const EXPLANATION_BUDGET_MS = 45000;
 
 // Both SSE and NDJSON records may be split anywhere across network chunks.
 export async function* records(body: ReadableStream<Uint8Array>, signal: AbortSignal): AsyncGenerator<string> {
@@ -128,6 +135,11 @@ const ADAPTERS: Record<Provider, ProviderAdapter> = {
 };
 export async function explain(settings: ExecutionSettings, fen: string, result: Evaluation, signal: AbortSignal, onDelta: (delta: string) => void, onStatus: (text: string) => void = () => {}, reviewFacts?: ReviewFacts, onDiagnostic: DiagnosticReporter = () => {}): Promise<Provider | 'facts'> {
     signal.throwIfAborted();
+    // Changing models, provider preferences or credentials invalidates every plan.
+    // Credentials stay only in this private configuration snapshot, never in cache keys.
+    const nextConfiguration = JSON.stringify(settings);
+    if (configuration !== nextConfiguration) { clearExplanationCache(); configuration = nextConfiguration; }
+    const deadline = Date.now() + EXPLANATION_BUDGET_MS;
     const catalog = buildExplanationFacts(fen, result, reviewFacts);
     const prompt = coachPrompt(catalog);
     const report = createDiagnosticReporter(onDiagnostic);
@@ -135,13 +147,19 @@ export async function explain(settings: ExecutionSettings, fen: string, result: 
     const chain: Provider[] = settings.provider === 'auto' ? ['chrome', 'ollama', settings.cloudProvider] : [settings.provider];
     for (const provider of chain) {
         signal.throwIfAborted();
+        if (Date.now() >= deadline) break;
         if (provider !== 'chrome' && provider !== 'ollama' && !settings.keys[provider]) continue;
         onStatus(`Trying ${PROVIDER_NAMES[provider]}…`);
         const attempt = new AbortController();
         const cancel = () => attempt.abort(signal.reason);
         signal.addEventListener('abort', cancel, { once: true });
         const adapter = ADAPTERS[provider];
-        const timeout = setTimeout(() => attempt.abort(new Error('Provider timed out.')), adapter.timeout);
+        const timeout = setTimeout(() => attempt.abort(new Error('Provider timed out.')), Math.min(adapter.timeout, deadline - Date.now()));
+        // The complete catalog includes history, branch, opening metadata and evidence.
+        const cacheKey = JSON.stringify([COACH_PROFILE, provider, catalog]);
+        const cached = plans.get(cacheKey);
+        const approved = cached && cached.expires > Date.now() ? validatePlan(JSON.stringify(cached.plan), catalog) : undefined;
+        let reused: ExplanationPlan | undefined;
         let text = '';
         const collect = (delta: string) => { text += delta.slice(0, Math.max(0, 600 - text.length)); };
         try {
@@ -155,15 +173,19 @@ export async function explain(settings: ExecutionSettings, fen: string, result: 
                         attempt.signal.throwIfAborted();
                         if (!object(permitted) || permitted.granted !== true) throw new Error('Provider permission unavailable.');
                     }
-                    await adapter.explain(settings, prompt, attempt.signal, collect);
+                    if (approved) reused = approved;
+                    else await adapter.explain(settings, prompt, attempt.signal, collect);
                 })();
                 void work.then(resolve, reject);
             });
             signal.throwIfAborted();
-            if (!text.trim()) throw new Error('Empty explanation.');
+            if (!reused && !text.trim()) throw new InvalidProviderResponse();
             // Commit only a successful attempt so a failed stream cannot mix providers' text.
-            const plan = validatePlan(text, catalog);
-            if (!plan) { report(diagnostic('INVALID_PROVIDER_RESPONSE', { provider })); return fallback(); }
+            const plan = reused ?? validatePlan(text, catalog);
+            if (!plan) throw new InvalidProviderResponse();
+            plans.delete(cacheKey);
+            if (configuration === nextConfiguration) plans.set(cacheKey, { plan, expires: Date.now() + 300000 });
+            while (plans.size > 40) plans.delete(plans.keys().next().value!);
             onDelta(renderExplanation(catalog, plan));
             return provider;
         } catch (error) {

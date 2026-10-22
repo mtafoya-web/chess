@@ -14,6 +14,7 @@ import { buildExplanationFacts } from './explanation-facts';
 import { renderExplanation } from './coach-prompt';
 import { isContentMessage, isBackgroundSender, isReviewSession } from './messages';
 import { createDiagnosticReporter, diagnostic } from './diagnostics';
+import { explanationStatus } from './explanation-state';
 
 const reportDiagnostic = createDiagnosticReporter(value => console.warn(value.code));
 performance.mark('kibitz:content-init:start');
@@ -142,7 +143,7 @@ chrome.runtime.onMessage.addListener((payload: unknown, sender) => {
         // facts/text; otherwise a fast cached response can finish before its text.
         reviewEvents = reviewEvents.then(async () => {
             if (closed || !review.active) return;
-            if (event.type === 'REVIEW_RESULT' || event.type === 'REVIEW_TEXT') {
+            if (event.type === 'REVIEW_RESULT' || event.type === 'REVIEW_TEXT' || event.type === 'REVIEW_EXPLANATION_STATE') {
                 const expectedUrl = location.href;
                 const response = await send({ type: 'NATIVE_REVIEW_REQUEST' });
                 if (closed || location.href !== expectedUrl || !review.active) return;
@@ -155,7 +156,7 @@ chrome.runtime.onMessage.addListener((payload: unknown, sender) => {
         return;
     }
     if (message.type === 'REOPEN') { closed = false; void update(true); return; }
-    if (message.type === 'REFRESH') { void update(true); return; }
+    if (message.type === 'REFRESH') { review.refreshExplanations(); void update(true); return; }
     const event = message as AnalysisEvent;
     if (closed || event.requestId !== requestId || document.visibilityState !== 'visible') return;
     if (event.type === 'ENGINE_RESULT') {
@@ -169,6 +170,10 @@ chrome.runtime.onMessage.addListener((payload: unknown, sender) => {
         arrows();
     }
     if (event.type === 'STATUS') card.status.textContent = event.text;
+    if (event.type === 'EXPLANATION_STATE' && event.fen === position?.fen) {
+        card.status.textContent = explanationStatus(event);
+        if (event.state === 'ready' || event.state === 'fallback') card.reviewAIText.textContent = explanationStatus(event);
+    }
     if (event.type === 'ERROR') card.status.textContent = result ? 'Move ready. Check explanation settings.' : 'Analysis unavailable. Check settings to try again.';
     if (event.type === 'STREAM_CHUNK') {
         text += event.textDelta; card.explain(text);

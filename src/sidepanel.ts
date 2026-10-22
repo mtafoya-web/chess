@@ -6,6 +6,9 @@ import { DEFAULT_SETTINGS, ORIGINS, type AnalysisEvent, type CloudProvider, type
 import { renderMarkdown } from './markdown';
 import { chromeAvailability, downloadChromeAI } from './chrome-ai';
 import { applySiteTheme, isSiteTheme } from './theme';
+import { explanationStatus } from './explanation-state';
+import { buildExplanationFacts } from './explanation-facts';
+import { renderExplanation } from './coach-prompt';
 
 const element = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const provider = element<HTMLSelectElement>('provider');
@@ -29,16 +32,20 @@ function connect() {
         if (receiveTheme(event)) return;
         if (event.type.startsWith('REVIEW_')) return;
         if (!event.manual) {
+            if (event.type === 'EXPLANATION_STATE') status.textContent = explanationStatus(event);
             if (event.type === 'STATUS' || event.type === 'ERROR') status.textContent = event.text;
             if (event.type === 'ENGINE_RESULT') status.textContent = event.result.terminal ?? 'Analysis appears beside the board.';
             return;
         }
         if (event.requestId !== manualId) return;
+        if (event.type === 'EXPLANATION_STATE' && event.fen === manualFen) status.textContent = explanationStatus(event);
         if (event.type === 'ENGINE_RESULT') {
             manualResult.replaceChildren();
             const heading = document.createElement('h2');
             heading.textContent = event.result.terminal ?? `${event.result.candidates[0] ? readableMove(manualFen, event.result.candidates[0].uci) : 'No move'} · ${event.result.evaluation}`;
-            manualResult.append(heading, document.createElement('p'));
+            const paragraph = document.createElement('p');
+            paragraph.textContent = renderExplanation(buildExplanationFacts(manualFen, event.result));
+            manualResult.append(heading, paragraph);
         }
         if (event.type === 'STREAM_CHUNK') { manualText += event.textDelta; const p = manualResult.querySelector('p'); if (p) renderMarkdown(p, manualText); }
         if (event.type === 'STATUS' || event.type === 'ERROR') { status.textContent = event.text; }

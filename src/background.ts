@@ -148,7 +148,7 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
             const event = message.event as AnalysisEvent | ReviewEvent;
             if (active?.requestId === event.requestId && active.tabId === event.tabId && active.manual === message.manual && (!('sessionId' in event) || event.sessionId === active.sessionId)) {
                 broadcast(event, active.manual);
-                if (active.manual && !active.sessionId && (event.type === 'ERROR' || event.type === 'ENGINE_RESULT' && event.result.terminal || event.type === 'STATUS' && event.text.startsWith('Explanation by '))) {
+                if (active.manual && !active.sessionId && (event.type === 'ERROR' || event.type === 'ENGINE_RESULT' && event.result.terminal || event.type === 'EXPLANATION_STATE' && event.state !== 'pending')) {
                     active = undefined; await chrome.storage.session.remove('activeAnalysis');
                 }
             }
@@ -244,7 +244,12 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
             if (panel || !active?.manual) await cancel(panel ? undefined : sender.tab!.id);
         }
         else if (panel && request.type === 'REOPEN' && tab?.id) await chrome.tabs.sendMessage(tab.id, { type: 'REOPEN' });
-        else if (panel && request.type === 'SETTINGS_CHANGED' && tab?.id) { await cancel(); await chrome.tabs.sendMessage(tab.id, { type: 'REFRESH' }).catch(() => {}); }
+        else if (panel && request.type === 'SETTINGS_CHANGED') {
+            await cancel();
+            await chrome.runtime.sendMessage({ target: 'offscreen', type: 'EXPLANATION_RESET' }).catch(() => {});
+            const tabs = await chrome.tabs.query({ url: ['https://www.chess.com/*', 'https://lichess.org/*'] });
+            await Promise.allSettled(tabs.filter(t => t.id !== undefined).map(t => chrome.tabs.sendMessage(t.id!, { type: 'REFRESH' })));
+        }
         return { ok: true };
     };
     void run().then(respond, error => respond({

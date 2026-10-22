@@ -65,3 +65,25 @@ it('keeps HTTP failures optional and preserves exact position verification', asy
     const next=await import('../src/opening-loader');
     expect(await next.loadOpeningContext(DEFAULT_POSITION,history)).toEqual({});
 });
+
+it('labels exact FEN book matches separately from historical opening recognition and shares the index', async()=>{
+    fetcher.mockResolvedValue(Response.json(rows));
+    const {loadOpeningContext,loadAnalysisOpeningContext}=await import('../src/opening-loader');
+    const position=await loadAnalysisOpeningContext(fen);
+    expect(position.currentPosition).toMatchObject({name:"King's Pawn",eco:'B00',source:'local-position-match',fen});
+    expect(await loadOpeningContext(fen)).toEqual({});
+    expect((await loadOpeningContext(fen,history)).current?.name).toBe("King's Pawn");
+    expect(fetcher).toHaveBeenCalledTimes(1);
+});
+it('keeps position-book lookup optional and cancels one caller without poisoning a shared lookup', async()=>{
+    let resolve!:(response:Response)=>void;
+    fetcher.mockReturnValue(new Promise(r=>{resolve=r;}));
+    const {loadAnalysisOpeningContext}=await import('../src/opening-loader');
+    const controller=new AbortController();
+    const cancelled=loadAnalysisOpeningContext(fen,undefined,controller.signal);
+    const rejection=expect(cancelled).rejects.toMatchObject({name:'AbortError'});
+    const next=loadAnalysisOpeningContext(fen);
+    controller.abort(); await rejection;
+    resolve(Response.json(rows));expect((await next).currentPosition?.name).toBe("King's Pawn");
+    expect(fetcher).toHaveBeenCalledTimes(1);
+});

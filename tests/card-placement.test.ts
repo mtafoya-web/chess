@@ -71,12 +71,13 @@ it('reserves a reversible adjacent grid column around fixed native tools without
         return element;
     }) as typeof document.createElement);
     bounds(main, () => rect(0, 0, 940, 900));
-    bounds(placement.slot, () => rect(600, 0, 300, Math.max(200, Number.parseFloat(placement.slot.style.minHeight) || 0)));
+    bounds(placement.slot, () => rect(600, 512, 300, Math.max(200, Number.parseFloat(placement.slot.style.minHeight) || 0)));
     bounds(host, () => placement.slot.getBoundingClientRect());
     bounds(document.getElementById('native')!, () => rect(600, 212, 300, 100));
     placement.attach(board, true);
     const wrapper = document.querySelector('[data-kibitz-column]');
     expect(wrapper?.contains(placement.slot)).toBe(true); expect(wrapper?.contains(adjacent)).toBe(true);
+    expect(adjacent.nextElementSibling).toBe(placement.slot);
     expect(board.getBoundingClientRect().width).toBe(500);
     placement.destroy(); expect(main.contains(adjacent)).toBe(true); expect(document.querySelector('[data-kibitz-column]')).toBeNull();
     create.mockRestore();
@@ -136,4 +137,26 @@ it('keeps the allocation inside BODY when Chess.com puts board-layout on BODY', 
     bounds(replacement, () => rect(0, 1000, 400, 400));
     placement.attach(replacement, false);
     expect(document.body.lastElementChild).toBe(placement.slot);
+});
+
+it('detects notation and evaluation intersections even when they contain no buttons', () => {
+    const {placement,board,host} = fixture(); placement.attach(board,true);
+    for (const className of ['move-list','evaluation-bar','tview2','round__moves']) {
+        const native = document.createElement('div'); native.className = className;
+        document.body.append(native); bounds(native,()=>rect(0,650,200,60));
+        expect(placementCollisions(host)).toContain(native); native.remove();
+    }
+});
+it('rechecks sticky native widgets on scroll and moves guidance into safe flow', () => {
+    const {placement,board,main,adjacent,host} = fixture(940);
+    const slotHeight = () => Math.max(200,Number.parseFloat(placement.slot.style.minHeight)||0);
+    bounds(placement.slot,()=>placement.slot.parentElement===adjacent?rect(600,100,300,slotHeight()):rect(0,600,560,200));
+    bounds(host,()=>placement.slot.getBoundingClientRect());
+    bounds(adjacent,()=>rect(600,0,300,100+(placement.slot.parentElement===adjacent?slotHeight():0)));
+    placement.attach(board,true); expect(placement.slot.parentElement).toBe(adjacent);
+    const bar=document.createElement('div');bar.className='evaluation-bar';adjacent.append(bar);
+    bounds(bar,()=>rect(600,150,30,200));
+    window.dispatchEvent(new Event('scroll'));vi.runAllTimers();
+    expect(main.nextElementSibling).toBe(placement.slot);
+    expect(placementCollisions(host)).toEqual([]);
 });

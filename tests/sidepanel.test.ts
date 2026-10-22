@@ -2,6 +2,8 @@
 import { readFileSync } from 'node:fs';
 import { beforeEach, afterEach, expect, it, vi } from 'vitest';
 import { DEFAULT_SETTINGS } from '../src/types';
+import { DEFAULT_POSITION } from 'chess.js';
+import { evaluation } from '../src/chess';
 vi.mock('../src/chrome-ai', () => ({ chromeAvailability: vi.fn(async () => 'unavailable'), downloadChromeAI: vi.fn() }));
 const storageSet = vi.fn(async () => {});
 let configured = { gemini: true, openai: false, groq: false };
@@ -28,6 +30,19 @@ beforeEach(async () => {
     await new Promise(resolve => setTimeout(resolve, 0));
 });
 afterEach(() => { vi.unstubAllGlobals(); document.body.replaceChildren(); });
+it('keeps verified manual-position commentary when the AI explanation fails', () => {
+    (document.getElementById('fen') as HTMLTextAreaElement).value = DEFAULT_POSITION;
+    document.getElementById('manual')!.dispatchEvent(new Event('submit', {bubbles:true,cancelable:true}));
+    const request = sendMessage.mock.calls.find(([message]) => message.type === 'ANALYSIS_REQUEST')![0] as unknown as {requestId:string};
+    const base = {requestId:request.requestId,tabId:12,manual:true};
+    listeners[0]({...base,type:'ENGINE_RESULT',result:evaluation([{uci:'e2e4',san:'e4',pv:'e4',score:0.2}])});
+    const paragraph = document.querySelector('#manual-result p')!;
+    const verified = paragraph.textContent;
+    expect(verified).toContain('White places a pawn in the center on E4');
+    listeners[0]({...base,type:'EXPLANATION_STATE',fen:DEFAULT_POSITION,state:'failed'});
+    expect(paragraph.textContent).toBe(verified);
+    expect(document.getElementById('status')!.textContent).toContain('Verified feedback is still available');
+});
 it('starts local-first with optional cloud collapsed and saves suggestion source', async () => {
     const provider = document.getElementById('provider') as HTMLSelectElement;
     expect(provider.value).toBe('auto');

@@ -1,5 +1,5 @@
 import { Chess, DEFAULT_POSITION } from 'chess.js';
-import { createOpeningLookup, type OpeningContext, type OpeningRow } from './opening-context';
+import { createOpeningLookup, type OpeningContext, type OpeningRow, type AnalysisOpeningContext } from './opening-context';
 import type { BoardHistory } from './board-context';
 
 let pending: Promise<ReturnType<typeof createOpeningLookup>> | undefined;
@@ -46,4 +46,22 @@ export async function loadOpeningContext(fen: string, history?: BoardHistory, su
         signal?.throwIfAborted();
         return {}; // Opening metadata is optional; engine and coaching stay available.
     } finally { if (onAbort) signal?.removeEventListener('abort', onAbort); }
+}
+
+/** Position labels describe an exact book setup, independently of unknown game history. */
+export async function loadAnalysisOpeningContext(fen: string, suggested?: string, signal?: AbortSignal, pv?: string[]): Promise<AnalysisOpeningContext> {
+    signal?.throwIfAborted();
+    if (Date.now() < retryAfter) return {};
+    let onAbort: (() => void) | undefined;
+    try {
+        const cancelled = new Promise<never>((_, reject) => {
+            onAbort = () => reject(signal?.reason ?? new DOMException('Cancelled', 'AbortError'));
+            signal?.addEventListener('abort', onAbort, {once: true});
+        });
+        const lookup = await Promise.race([index(), cancelled]);
+        signal?.throwIfAborted();
+        return lookup.positionContext(fen, suggested, pv);
+    } catch {
+        signal?.throwIfAborted(); return {};
+    } finally {if (onAbort) signal?.removeEventListener('abort', onAbort);}
 }

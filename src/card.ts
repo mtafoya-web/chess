@@ -8,7 +8,7 @@ import { rankedCandidates, candidateWhiteMate } from './overlay-model';
 import { Chess } from 'chess.js';
 import { KIBITZ_MARK } from './wordmark';
 import type { OpeningContext } from './opening-context';
-import { reviewInsight, reviewLabel } from './review-insights';
+import { reviewInsight, reviewLabel, type ReviewInsight } from './review-insights';
 const candidateScore = (candidate: Evaluation['candidates'][number]) => {
     const mate = candidateWhiteMate(candidate);
     return mate !== undefined ? `${mate < 0 ? '-' : ''}M${Math.abs(mate)}` : `${candidate.score >= 0 ? '+' : ''}${candidate.score.toFixed(2)}`;
@@ -41,6 +41,7 @@ export class Card {
     readonly heatmapToggle: HTMLInputElement;
     readonly arrowsToggle: HTMLInputElement;
     readonly reviewLegend: HTMLElement;
+    readonly reviewCueExplanation: HTMLElement;
     readonly reviewAI: HTMLButtonElement;
     readonly reviewRetry: HTMLButtonElement;
     readonly reviewSweep: HTMLButtonElement;
@@ -85,6 +86,16 @@ export class Card {
         this.reviewProgress = this.reviewControls.querySelector('.review-progress')!;
         this.reviewIssues = document.createElement('details'); this.reviewIssues.className = 'review-issues';
         this.reviewIssues.innerHTML = '<summary>Moves to revisit</summary><p>No inaccuracies found in the analyzed moves yet.</p><ol style="padding-left:20px;max-height:240px;overflow:auto" aria-label="Inaccuracies and mistakes"></ol>';
+        this.reviewCueExplanation = document.createElement('section');
+        this.reviewCueExplanation.className = 'review-cue-explanation';
+        this.reviewCueExplanation.setAttribute('aria-label', 'Explanation of board highlights');
+        this.reviewCueExplanation.setAttribute('aria-live', 'polite');
+        this.reviewCueExplanation.setAttribute('aria-atomic', 'true');
+        this.reviewCueExplanation.hidden = true;
+        this.reviewControls.prepend(this.reviewCueExplanation);
+        const cueStyle = document.createElement('style');
+        cueStyle.textContent = `.review-cue-explanation{margin:12px 0;border-top:1px solid var(--k-border,#7775);padding-top:8px}.review-cue-explanation h3{font:inherit;font-weight:650;margin:0}.cue-list{list-style:none;margin:8px 0;padding:0;display:grid;gap:8px}.cue-list li{display:flex;align-items:flex-start;gap:10px}.cue-sample{flex:0 0 20px;width:20px;height:20px;margin-top:2px;border:2px solid var(--cue-color);border-radius:3px;background:var(--cue-fill)}.cue-sample.origin{border-style:dashed}.cue-sample.consequence{border:3px dotted #f0b342;background:none}.cue-help p{font-size:inherit}.cue-help{font-size:inherit}`;
+        this.root.append(cueStyle);
         this.reviewControls.append(this.reviewIssues);
         this.reviewAIText = document.createElement('p'); this.reviewAIText.className = 'review-ai-text';
         this.explanation.after(this.reviewAIText);
@@ -111,13 +122,13 @@ export class Card {
             toggle.title = body.hidden ? 'Expand guidance' : 'Collapse guidance';
         });
     }
-    clear(text: string) { this.showOpening(); this.positionFacts.hidden = true; this.positionFacts.replaceChildren(); this.heading.textContent = 'Ready to study'; this.explanation.replaceChildren(); this.reviewAIText.replaceChildren(); this.evaluation.textContent = ''; this.alternatives.textContent = ''; this.reviewLegend.textContent = 'Candidate heatmap colors compare legal candidate moves; they do not show every attacked square.'; this.sourceAttribution.textContent = ''; this.heatmapToggle.disabled = true; this.arrowsToggle.disabled = true; this.reviewAI.disabled = true; this.reviewRetry.hidden = true; this.status.textContent = text; this.bar.style.width = '50%'; }
+    clear(text: string) { this.reviewCueExplanation.hidden = true; this.reviewCueExplanation.replaceChildren(); this.showOpening(); this.positionFacts.hidden = true; this.positionFacts.replaceChildren(); this.heading.textContent = 'Ready to study'; this.explanation.replaceChildren(); this.reviewAIText.replaceChildren(); this.evaluation.textContent = ''; this.alternatives.textContent = ''; this.reviewLegend.textContent = 'Candidate heatmap colors compare legal candidate moves; they do not show every attacked square.'; this.sourceAttribution.textContent = ''; this.heatmapToggle.disabled = true; this.arrowsToggle.disabled = true; this.reviewAI.disabled = true; this.reviewRetry.hidden = true; this.status.textContent = text; this.bar.style.width = '50%'; }
     setReviewMode(active: boolean) {
         this.reviewControls.hidden = !active; this.layerControls.hidden = active;
         if (active) this.reviewControls.prepend(this.reviewLegend); else { this.layerControls.append(this.reviewLegend); this.reviewAIText.replaceChildren(); }
         this.reviewButton.hidden = active;
     }
-    showReview(result: Evaluation, feedback?: MoveFeedback, before?: Evaluation, move?: ReviewMove) {
+    showReview(result: Evaluation, feedback?: MoveFeedback, before?: Evaluation, move?: ReviewMove, verifiedInsight?: ReviewInsight) {
         this.heading.textContent = move ? `${readableMove(move.beforeFen, move.uci)} · ${reviewLabel(feedback?.label)}` : 'Starting position';
         this.bar.style.width = `${50 + 48 * Math.tanh(result.whiteScore / 4)}%`;
         this.status.textContent = '';
@@ -126,10 +137,29 @@ export class Card {
         this.sourceAttribution.textContent = 'Move rating and consequences: local Stockfish comparison.';
         this.reviewAIText.replaceChildren(); this.reviewAI.disabled = !feedback;
         this.alternatives.textContent = '';
+        this.reviewCueExplanation.hidden = true; this.reviewCueExplanation.replaceChildren();
         if (move && feedback) {
             try {
-                const insight = reviewInsight(move,feedback,before,result);
-                this.alternatives.textContent = insight.alternative ?? '';
+                const insight = verifiedInsight ?? reviewInsight(move,feedback,before,result);
+                this.explanation.textContent = insight.summary;
+                this.alternatives.textContent = [insight.continuation, insight.alternative, insight.evaluationNote].filter(Boolean).join('\n\n');
+                if (insight.cues.length) {
+                    const section = this.reviewCueExplanation;
+                    section.hidden = false;
+                    section.style.setProperty('--cue-color', feedback.label === 'Inaccuracy' ? '#a4750d' : '#b63c42');
+                    section.style.setProperty('--cue-fill', feedback.label === 'Inaccuracy' ? '#d3a52d26' : '#c9454d26');
+                    const heading = document.createElement('h3'), played = document.createElement('p'), grade = document.createElement('p'), list = document.createElement('ul');
+                    heading.textContent = 'On the board'; played.textContent = insight.playedDescription; grade.textContent = insight.gradeExplanation ?? '';
+                    list.className = 'cue-list';
+                    for (const cue of insight.cues) {
+                        const row = document.createElement('li'), sample = document.createElement('span'), label = document.createElement('span');
+                        sample.className = `cue-sample ${cue.kind}`; sample.setAttribute('aria-hidden', 'true'); label.textContent = cue.label;
+                        row.append(sample, label); list.append(row);
+                    }
+                    const help = document.createElement('details'); help.className = 'cue-help';
+                    help.innerHTML = '<summary>What do the symbols and outlines mean?</summary><p>?! Inaccuracy: a small setback. ? Mistake: a significant setback. ?? Blunder: a major setback. M? Missed mate: a missed chance to force checkmate.</p><p>The dashed square shows where the piece moved from; the solid square shows where it moved to. The dotted gold outline marks an affected piece in the position shown. Grades compare engine evaluations; a possible continuation is not a prediction of what your opponent will play.</p>';
+                    section.append(heading, played, grade, list, help);
+                }
             } catch { /* Never render an alternative from an unverified move. */ }
         }
         this.heatmapToggle.disabled = true; this.arrowsToggle.disabled = true;

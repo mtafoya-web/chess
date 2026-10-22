@@ -170,14 +170,22 @@ it('captures only a still-selected completed game and rejects navigation races',
     const changed = await send({ type: 'CAPTURE_GAME' }, panel);
     expect(changed.error).toContain('changed');
 });
-it('keeps the manual result active until provider attribution has been delivered', async () => {
+it('keeps manual analysis active until its typed explanation completion is delivered', async () => {
     const post = connectPanel(); await send(request('manual'), panel);
     await vi.waitFor(() => expect(session.activeAnalysis).toMatchObject({ requestId: 'manual' }));
     listener({ target: 'background', manual: true, event: { type: 'STREAM_CHUNK', requestId: 'manual', tabId: 12, textDelta: '', isComplete: true } }, engine, () => {});
     listener({ target: 'background', manual: true, event: { type: 'STATUS', requestId: 'manual', tabId: 12, text: 'Explanation by Chrome AI' } }, engine, () => {});
     await vi.waitFor(() => expect(post).toHaveBeenCalledTimes(2));
-    expect(post).toHaveBeenLastCalledWith(expect.objectContaining({ text: 'Explanation by Chrome AI' }));
+    expect(session.activeAnalysis).toMatchObject({requestId:'manual'});
+    listener({ target: 'background', manual: true, event: { type: 'EXPLANATION_STATE', requestId: 'manual', tabId: 12, fen: new Chess().fen(), state:'ready',provider:'chrome' } }, engine, () => {});
+    await vi.waitFor(() => expect(post).toHaveBeenCalledTimes(3));
+    expect(post).toHaveBeenLastCalledWith(expect.objectContaining({ type:'EXPLANATION_STATE',state:'ready',provider:'chrome' }));
     expect(session.activeAnalysis).toBeUndefined();
+});
+it('resets explanation caches and refreshes website review when settings change', async () => {
+    await send({type:'SETTINGS_CHANGED'},panel);
+    expect(runtimeSend).toHaveBeenCalledWith({target:'offscreen',type:'EXPLANATION_RESET'});
+    expect(tabSend).toHaveBeenCalledWith(12,{type:'REFRESH'});
 });
 it('keeps settings panel-only and returns credential flags instead of secrets', async () => {
     expect(await send({ type: 'GET_SETTINGS' })).toMatchObject({ error: 'Unauthorized request.' });
