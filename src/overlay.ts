@@ -146,7 +146,7 @@ export class Overlay {
             group.dataset.marker = marker.square;
             const badge = document.createElementNS(NS, 'circle');
             badge.setAttribute('cx', String(x + 28)); badge.setAttribute('cy', String(y - 28)); badge.setAttribute('r', '19');
-            badge.setAttribute('fill', marker.grade === 'blunder' || marker.grade === 'mistake' ? '#b63c42' : marker.grade === 'inaccuracy' ? '#996500' : '#326d4d');
+            badge.setAttribute('fill', marker.grade === 'blunder' || marker.grade === 'mistake' || marker.grade === 'missed-mate' ? '#b63c42' : marker.grade === 'inaccuracy' ? '#996500' : '#326d4d');
             badge.setAttribute('stroke', '#fff'); badge.setAttribute('stroke-width', '3');
             const text = document.createElementNS(NS, 'text');
             text.setAttribute('x', String(x + 28)); text.setAttribute('y', String(y - 20)); text.setAttribute('text-anchor', 'middle');

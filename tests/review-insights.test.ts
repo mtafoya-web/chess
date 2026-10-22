@@ -21,7 +21,7 @@ it('marks the real en-passant victim square instead of the empty capture destina
     const f=fixture('7k/8/8/8/3p4/8/4P3/7K w - - 0 1','e2e4',['d4e3'],'Mistake');
     const insight=reviewInsight(f.move,f.feedback,undefined,f.after);
     expect(insight.consequence?.square).toBe('e4');
-    expect(insight.summary).toContain('pawn on E3');
+    expect(insight.summary).toContain('pawn from E4 en passant on E3');
 });
 it('does not turn an attack map or an illegal line into a consequence cue',()=>{
     const f=fixture('6kb/8/8/8/8/8/8/RN5K w - - 0 1','b1a3',['g8f7','a3a8']);

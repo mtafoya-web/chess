@@ -21,8 +21,8 @@ export function reviewInsight(move: ReviewMove, feedback: MoveFeedback, before: 
     const board = new Chess(move.beforeFen), played = playUci(board, move.uci);
     if (board.fen() !== move.afterFen) throw new Error('Review position mismatch.');
     const side = colorName(played.color), problem = reviewProblem(feedback.label);
-    let summary = feedback.label === 'Checkmate' ? `${side} delivered checkmate.`
-        : !problem ? (played.captured ? `${side} captured ${pieceNames[played.captured]} on ${played.to.toUpperCase()} without a major loss in this search.`
+    const summary = feedback.label === 'Checkmate' ? `${side} delivered checkmate.`
+        : !problem ? (played.captured ? `${side} captured ${played.isEnPassant() ? `a pawn en passant, moving to ${played.to.toUpperCase()}` : `${pieceNames[played.captured]} on ${played.to.toUpperCase()}`} without a major loss in this search.`
             : `${side}'s move stayed close to the previous evaluation in this search.`)
         : problem === 'missed-mate' ? `${side} missed a mating continuation found in the previous search.`
         : `${side}'s move ${problem === 'inaccuracy' ? 'gave up some of the position’s evaluated strength' : 'worsened the position in this search'}.`;
@@ -39,7 +39,8 @@ export function reviewInsight(move: ReviewMove, feedback: MoveFeedback, before: 
         const capturedSquare = reply.isEnPassant() ? `${reply.to[0]}${reply.from[1]}` : reply.to;
         const victimOrigin = origins.get(capturedSquare);
         if (reply.color !== played.color && reply.captured && victimOrigin) {
-            const effect = `${colorName(reply.color)}'s ${pieceNames[reply.piece]} ${index === 0 ? 'can capture' : 'captures'} ${side}'s ${pieceNames[reply.captured]} on ${reply.to.toUpperCase()}`;
+            const target = reply.isEnPassant() ? `${side}'s pawn from ${capturedSquare.toUpperCase()} en passant on ${reply.to.toUpperCase()}` : `${side}'s ${pieceNames[reply.captured]} on ${reply.to.toUpperCase()}`;
+            const effect = `${colorName(reply.color)}'s ${pieceNames[reply.piece]} ${index === 0 ? 'can capture' : 'captures'} ${target}`;
             result.summary = `${index === 0 ? 'After this move, ' : 'In one searched continuation, '}${effect}.`;
             result.consequence = { square: victimOrigin, label: `${side}'s piece on ${victimOrigin.toUpperCase()} is captured in this searched continuation.` };
             break;

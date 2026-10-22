@@ -105,7 +105,6 @@ async function startReview(request: ReviewRequest, tabId: number, turn = ++gener
     await chrome.runtime.sendMessage({ target: 'offscreen', type: 'ENGINE_CANCEL' });
     const settings = await loadExecutionSettings();
     if (turn !== generation) return;
-    if (turn !== generation) return;
     active = { requestId: request.requestId, tabId, manual: false, sessionId: request.sessionId };
     pendingTabId = undefined;
     await chrome.storage.session.set({ activeAnalysis: active });

@@ -2,14 +2,13 @@ import type { Evaluation } from './types';
 import { renderMarkdown } from './markdown';
 import { applySiteTheme, readSiteTheme, type SiteTheme } from './theme';
 import type { BoardContext } from './board-context';
-import type { MoveFeedback } from './review-types';
+import type { MoveFeedback, ReviewMove } from './review-types';
 import { readableMove } from './readable-move';
 import { rankedCandidates, candidateWhiteMate } from './overlay-model';
 import { Chess } from 'chess.js';
 import { KIBITZ_MARK } from './wordmark';
 import type { OpeningContext } from './opening-context';
 import { reviewInsight, reviewLabel } from './review-insights';
-import { playUci } from './chess';
 const candidateScore = (candidate: Evaluation['candidates'][number]) => {
     const mate = candidateWhiteMate(candidate);
     return mate !== undefined ? `${mate < 0 ? '-' : ''}M${Math.abs(mate)}` : `${candidate.score >= 0 ? '+' : ''}${candidate.score.toFixed(2)}`;
@@ -118,18 +117,18 @@ export class Card {
         if (active) this.reviewControls.prepend(this.reviewLegend); else { this.layerControls.append(this.reviewLegend); this.reviewAIText.replaceChildren(); }
         this.reviewButton.hidden = active;
     }
-    showReview(result: Evaluation, feedback?: MoveFeedback, before?: Evaluation, san?: string, advice?: Evaluation, fen?: string, beforeFen?: string) {
-        this.show(advice ?? result, fen);
-        this.heading.textContent = san ? `${beforeFen ? readableMove(beforeFen, san) : san} · ${reviewLabel(feedback?.label)}` : 'Starting position';
+    showReview(result: Evaluation, feedback?: MoveFeedback, before?: Evaluation, move?: ReviewMove) {
+        this.heading.textContent = move ? `${readableMove(move.beforeFen, move.uci)} · ${reviewLabel(feedback?.label)}` : 'Starting position';
+        this.bar.style.width = `${50 + 48 * Math.tanh(result.whiteScore / 4)}%`;
+        this.status.textContent = '';
         this.evaluation.textContent = `${before ? `${before.evaluation} → ` : ''}${result.evaluation}`;
         this.explanation.textContent = feedback?.summary ?? result.terminal ?? 'Select a played move to review what happened.';
         this.sourceAttribution.textContent = 'Move rating and consequences: local Stockfish comparison.';
         this.reviewAIText.replaceChildren(); this.reviewAI.disabled = !feedback;
         this.alternatives.textContent = '';
-        if (san && beforeFen && feedback) {
+        if (move && feedback) {
             try {
-                const played = playUci(new Chess(beforeFen), new Chess(beforeFen).move(san).lan);
-                const insight = reviewInsight({ply:1,san,uci:played.lan,color:played.color,beforeFen,afterFen:played.after},feedback,before,result);
+                const insight = reviewInsight(move,feedback,before,result);
                 this.alternatives.textContent = insight.alternative ?? '';
             } catch { /* Never render an alternative from an unverified move. */ }
         }

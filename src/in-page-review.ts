@@ -183,14 +183,15 @@ export class InPageReviewController {
         if (!this.sweep || this.request || !this.currentSession || !this.verified()) return;
         const next = this.currentSession.moves.find(move => !this.results.has(move.ply));
         if (next) this.analyze(next.ply, false, true);
-        else { this.sweep = false; this.progress(); this.card.status.textContent = 'Game analysis complete. Use the website’s move controls to explore.'; }
+        else { this.sweep = false; this.progress(); this.card.reviewIssues.open = this.card.reviewIssues.querySelectorAll('li').length > 0; this.card.status.textContent = 'Game review complete. Open Moves to revisit to examine inaccuracies and mistakes.'; }
     }
 
     private render() {
         if (!this.verified()) return;
+        this.progress();
         const result = this.results.get(this.selected!);
         if (result) {
-            this.card.showReview(result.after, result.feedback, result.before, this.currentSession!.moves[this.selected! - 1]?.san, result.advice, this.position!.fen, this.currentSession!.moves[this.selected! - 1]?.beforeFen);
+            this.card.showReview(result.after, result.feedback, result.before, this.currentSession!.moves[this.selected! - 1]);
             this.card.showPositionFacts(buildBoardContext(this.position!.fen!, { sessionId: this.currentSession!.id, initialFen: this.currentSession!.initialFen, moves: this.currentSession!.moves.map(move => move.uci), ply: this.selected! }));
             this.card.showOpening(this.openings.get(this.selected!));
             const ai = this.aiText.get(this.selected!); if (ai) this.card.showReviewAI(ai.text, ai.provider);
@@ -216,7 +217,7 @@ export class InPageReviewController {
         const response=await this.send({type:'NATIVE_REVIEW_NAVIGATE',direction:'select',ply}).catch(()=>({ok:false}));
         if(this.currentSession?.id!==session || location.href!==url)return;
         this.onRequestRefresh();
-        if(!response?.ok)this.card.status.textContent=`Use the website's move list to select half-move ${ply}.`;
+        if(!response?.ok)this.card.status.textContent="Use the website's move list to select this played move.";
     }
 
     private draw() {
