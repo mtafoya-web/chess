@@ -73,7 +73,7 @@
             <details id="cloud-settings">
                 <summary>Cloud service ? optional</summary>
                 <p class="hint">Add a key only if you want cloud explanations. Cloud receives the position and verified
-                    analysis. Provider charges may apply, including failed attempts. Keys sync with your Chrome profile.
+                    analysis. Provider charges may apply, including failed attempts. Keys stay on this device.
                 </p><label>Cloud fallback<select id="cloud-provider">
                         <option value="gemini">Gemini</option>
                         <option value="openai">OpenAI</option>
@@ -82,6 +82,8 @@
                         autocomplete="off"></label><label id="key-label">API key <span class="hint">Optional in
                         Automatic mode</span><input id="key" type="password" autocomplete="off"
                         maxlength="2048"></label>
+                    <p id="key-state" class="hint" role="status"></p>
+                    <button id="remove-key" type="button" class="secondary">Remove saved key</button>
             </details>
             <button type="submit">Save settings</button><span id="saved" role="status"></span>
         </form>
