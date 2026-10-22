@@ -41,7 +41,7 @@ export function reviewInsight(move: ReviewMove, feedback: MoveFeedback, before: 
         if (reply.color !== played.color && reply.captured && victimOrigin) {
             const effect = `${colorName(reply.color)}'s ${pieceNames[reply.piece]} ${index === 0 ? 'can capture' : 'captures'} ${side}'s ${pieceNames[reply.captured]} on ${reply.to.toUpperCase()}`;
             result.summary = `${index === 0 ? 'After this move, ' : 'In one searched continuation, '}${effect}.`;
-            result.consequence = { square: victimOrigin, label: `${side}'s ${pieceNames[reply.captured]} on ${victimOrigin.toUpperCase()} is captured in this searched continuation.` };
+            result.consequence = { square: victimOrigin, label: `${side}'s piece on ${victimOrigin.toUpperCase()} is captured in this searched continuation.` };
             break;
         }
         const origin = origins.get(reply.from);
