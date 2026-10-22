@@ -132,7 +132,7 @@ try {
     for (const san of ['f3','e5','g4','Qh4#']) { const m=chess.move(san); moves.push({san:m.san,uci:m.from+m.to+(m.promotion??'')}); positions.push(chess.fen()); }
     const allPieces = positions.map(fen => new Chess(fen).board().flat().filter(Boolean));
     const boardTag=lichess?'cg-board':'wc-chess-board';
-    return `<!doctype html><html><head><title>Kibitz native board fixture</title><style>
+    return `<!doctype html><html><head><meta charset="utf-8"><title>Kibitz native board fixture</title><style>
       *{box-sizing:border-box}body{margin:0;padding:12px;font:16px system-ui;background:#f3f3ed;color:#242722}main{display:grid;grid-template-columns:minmax(0,640px) minmax(260px,1fr);gap:12px;max-width:1200px;margin:auto}.board-wrapper,.analyse__board{min-width:0}.board{display:block;position:relative;width:100%;aspect-ratio:1;background:conic-gradient(#769453 25%,#eeeccf 0 50%,#769453 0 75%,#eeeccf 0);background-size:25% 25%}.piece,piece{position:absolute;width:12.5%;height:12.5%;display:flex;align-items:center;justify-content:center;font-size:clamp(16px,5vw,46px);line-height:1;pointer-events:none}.site-controls{display:flex;align-items:center;gap:8px;min-height:48px;flex-wrap:wrap}.site-controls button,.move-list button{min-height:44px}aside{min-width:0;grid-column:2;grid-row:1 / span 2}.site-controls{grid-column:1;grid-row:2}.native-chat{padding:12px;background:#e3e7db;min-height:100px}button{font:inherit}.move-list{display:flex;gap:6px;flex-wrap:wrap}.node.active,move.active{outline:2px solid #456922}footer{max-width:1200px;margin:12px auto;padding:12px;background:#e0e6d9}body.dark{background:#242722;color:#eee}body.dark .native-chat,body.dark footer{background:#343c2d}@media(max-width:999px){main{grid-template-columns:minmax(0,1fr);grid-template-rows:auto 48px auto}.site-controls{height:48px}aside{grid-column:1;grid-row:auto}.native-chat{min-height:100px}}
       input{max-width:100%;min-width:0}
     </style></head><body><header class="game__meta"><span class="result" data-result="0-1">0-1</span></header>
@@ -169,7 +169,13 @@ try {
     assert.ok(!JSON.stringify(contentSettings).includes('migration-sentinel'));
     await until(()=>page.evaluate(cardValue('root?.querySelector("article > button")?.hidden === false')),'review launch button');
     await page.evaluate(cardValue('root.querySelector("article > button").click()'));
-    await until(()=>page.evaluate(cardValue('root?.querySelector("h2").textContent.includes("·")')),'in-page Stockfish feedback',30000);
+    try {
+      await until(()=>page.evaluate(cardValue('root?.querySelector("h2").textContent.includes("·")')),'in-page Stockfish feedback',30000);
+    } catch(error) {
+      console.error('Initial review state:',await page.evaluate(cardValue('({heading:root.querySelector("h2").textContent,status:root.querySelector(".status").textContent,review:!root.querySelector("[data-stop]").closest("section").hidden})')));
+      console.error('Initial review events:',await offscreen.evaluate('globalThis.__reviewEvents'));
+      throw error;
+    }
     if (!failOpenings) await until(()=>page.evaluate(cardValue('root?.querySelector("#guidance > details").textContent.includes("Opening so far:")')),'lazy opening metadata after immediate feedback');
     else {
       assert.ok(await page.evaluate(cardValue('!!root.querySelector(".explanation").textContent')), 'Missing opening data must not hide coaching');
@@ -207,13 +213,15 @@ try {
       throw error;
     }
     assert.ok(await page.evaluate('document.querySelector(".node.active").dataset.ply === "2"'));
-    await page.evaluate(`const root=document.querySelector('#kibitz-card').shadowRoot;root.querySelector('.review-issues').open=true;root.querySelector('[data-issue-ply="3"]').click();true`);
+    await page.evaluate(`(()=>{const root=document.querySelector('#kibitz-card').shadowRoot;root.querySelector('.review-issues').open=true;root.querySelector('[data-issue-ply="3"]').click();return true})()`);
     await until(()=>page.evaluate(cardValue('root.querySelector("h2").textContent.startsWith("Pawn to G4")')),'problem list selects the native played move',30000);
     assert.equal(await page.evaluate('document.querySelector(".node.active").dataset.ply'),'3');
     assert.equal(await page.evaluate('document.querySelector("#kibitz-overlay [data-marker] text").textContent'),'??');
     assert.equal(await page.evaluate('document.querySelectorAll("#kibitz-overlay [data-review-cue=origin],#kibitz-overlay [data-review-cue=destination]").length'),2);
     assert.equal(await page.evaluate('document.querySelectorAll("#kibitz-overlay [data-review-cue=consequence]").length'),1);
     assert.ok(await page.evaluate(cardValue('root.querySelector(".lines").textContent.includes("Better alternative")')));
+    const cuesShot=await page.send('Page.captureScreenshot',{format:'png'});
+    await writeFile(join(profile,lichess?'lichess-review-cues.png':'chesscom-review-cues.png'),Buffer.from(cuesShot.data,'base64'));
 
     const checkPlacement=async(label)=>{
       await wait(450);
@@ -223,7 +231,7 @@ try {
     };
     for(const width of widths){await page.send('Emulation.setDeviceMetricsOverride',{width,height:900,deviceScaleFactor:1,mobile:false});await checkPlacement(`${lichess?'Lichess':'Chess.com'} ${width}px`)}
     await page.send('Emulation.setDeviceMetricsOverride',{width:375,height:800,deviceScaleFactor:1,mobile:false});
-    await page.evaluate(`const root=document.querySelector('#kibitz-card').shadowRoot;root.querySelector('#guidance > details').open=true;root.querySelector('.explanation').textContent='Long review explanation. '.repeat(30);true`);await checkPlacement('expanded narrow card');
+    await page.evaluate(`(()=>{const root=document.querySelector('#kibitz-card').shadowRoot;root.querySelector('#guidance > details').open=true;root.querySelector('.explanation').textContent='Long review explanation. '.repeat(30);return true})()`);await checkPlacement('expanded narrow card');
     await page.evaluate(`document.querySelector('#native-flip').click();true`);await checkPlacement('rotated native board');
     await page.evaluate(`document.body.classList.add('dark');document.querySelector('#kibitz-card').scrollIntoView({block:'center'});true`);await checkPlacement('dark narrow card');
     const shot=await page.send('Page.captureScreenshot',{format:'png'});await writeFile(join(profile,lichess?'lichess-native-review.png':'chesscom-native-review.png'),Buffer.from(shot.data,'base64'));
@@ -247,7 +255,7 @@ try {
     await controller.send('Target.closeTarget',{targetId});
     assert.deepEqual(fixtureErrors, [], 'Fixture interception failures');
     await blank.send('Page.navigate',{url:`${origin}/sidepanel.html`});await until(()=>blank.evaluate('!!document.querySelector("#diagnostics")'),'settings reload');
-    console.log(`PASS: ${lichess?'Lichess':'Chess.com'} native board review with panel closed, move sync, heatmaps, AI, full-game analysis, no collisions 240–2560px and 200% zoom`);
+    console.log(`PASS: ${lichess?'Lichess':'Chess.com'} review critique, problem selection and board cues; analysis suggestions and saved layers; no collisions 240–2560px and 200% zoom`);
   }
   // Check real site layouts too; access failures are separate from deterministic integration checks.
   for (const url of liveSites ? ['https://lichess.org/analysis','https://www.chess.com/analysis'] : []) {

@@ -4,7 +4,8 @@ Kibitz is a Chrome extension that helps you understand chess moves on **Chess.co
 
 It adds a small card beside or below the board with:
 
-- A recommended move from usable Lichess analysis or Kibitz's local Stockfish engine.
+- Analysis boards: recommended moves from usable Lichess analysis or Kibitz's local Stockfish engine.
+- Game review: critique of the played move, with visual cues for inaccuracies, mistakes, blunders, and missed mates.
 - A score showing which side has the advantage. Positive scores favor White; negative scores favor Black.
 - A short explanation naming the colored piece, its squares, verified effects, and a possible reply.
 - A **Details** section with other moves and possible continuations.
@@ -111,16 +112,17 @@ Existing keys migrate automatically: Kibitz saves them locally before removing t
 1. On Chess.com or Lichess, open your game history and select a finished game.
 2. Click **Review with Kibitz** on the board card. You can also open settings and click **Review selected game**. You do not need the site's game-review report.
 3. Use **the website's existing move list and previous/next controls**. Kibitz follows the position on that board; it does not create another board.
-4. Read the move rating and explanation in the on-page card. Heatmaps, up to three ranked candidate arrows, and a played-move rating marker appear directly on the website's board.
-5. Toggle **Candidate heatmap** and **Candidate arrows** directly on the card. They work independently, and your choices survive page refresh. Each destination has one rank label even when both layers are enabled. The heatmap marks analyzed candidate destinations; blank squares have not been evaluated. Use **Details** for longer lines and **Position facts** for current pieces and known captures.
+4. Read what the played move allowed, missed, or cost. Review does not display candidate arrows, a candidate heatmap, or a ranked next-move list.
+5. Look for **?!** (inaccuracy), **?** (mistake), **??** (blunder), or **M?** (missed mate) beside the played destination. Problem moves also have subtle origin/destination highlights. A dashed gold outline marks a piece or king affected in a legally replayed searched continuation when that evidence is available.
+6. Open **Moves to revisit** for the analyzed inaccuracies and worse moves. Click an entry to select its native move when the website exposes a unique supported move node. Otherwise, use the website's move list; Kibitz does not guess an unsupported navigation method.
 
 The selected move is analyzed first. Choose **Analyze whole game** on the card for a full pass, or pause it whenever you want. This does not move the website's board. Ratings are provisional Kibitz estimates from consistent local engine searches, not the site's own accuracy scores. Positive evaluations favor White, regardless of which player made the move.
 
-The gold-framed card uses readable labels such as **Knight to F3**. Coaching explains verified effects such as development, center pressure, cleared lines, and castling preparation. **Details** includes an opening name and short teaching note when verified standard-start history supports it; a FEN alone does not establish an opening. Arrows 1, 2, and 3 are alternative moves for the same player, with 1 preferred.
+The gold-framed card uses readable labels such as **Knight to F3**. Review keeps its grade separate and acknowledges accurate moves briefly. Explanations of problem moves prioritize verified consequences. A **Better alternative from the previous position** appears only in Details for a problem move, with a short conditional line when legal. It never replaces the played move's heading or becomes a recommendation overlay.
 
 Stockfish feedback works without an AI service. Click **Explain with AI** for optional wording using your configured Chrome AI, Ollama, or cloud fallback. Full-game analysis does not make an AI request for every move.
 
-Review works with the settings panel closed. Continuations appear as notation with numbered arrows for alternative next moves in the current position. Interactive variation playback is unavailable unless the website integration can support it safely; Kibitz does not draw future positions over an unchanged board.
+Review works with the settings panel closed. It uses consistent local Stockfish comparisons rather than website candidate suggestions. Alternatives remain notation in Details; Kibitz does not draw future positions or recommendation arrows over the review board. A completed-game page waits for **Review with Kibitz** instead of starting ordinary suggestions. To explore recommended moves, open an analysis or study board.
 
 If the selected page does not expose a complete game, expand **Have a PGN instead?** in settings and use **Apply PGN on page**. Paste the game or choose a `.pgn` file while the website displays a matching mainline position on a completed-game or study board. The import supplies history without creating a board. Lichess can also supply the selected finished game's PGN through its public game-export service. Kibitz does not scan your account's game history.
 
@@ -128,6 +130,8 @@ If the selected page does not expose a complete game, expand **Have a PGN instea
 
 - Open a supported study, analysis, review, or computer-practice board. The card updates as the position changes.
 - Open **Details** to see other moves and engine lines.
+- On analysis boards, **Candidate heatmap** and **Candidate arrows** are independent saved switches. Up to three numbered arrows represent alternative next moves, not consecutive variation moves. Each destination gets one label even with both layers enabled. Blank heatmap squares are not safety ratings.
+- Review temporarily hides those analysis switches without changing their values. Returning to an analysis board restores them. Review symbols and consequence highlights are independent of the saved analysis preferences.
 - Click the **Kibitz heading** to collapse or expand the card.
 - Click **Close** to pause analysis for that tab. In settings, click **Show board card** to bring it back.
 - The card prefers a reserved space beside the board. When that space is too narrow or cannot grow safely, it gets its own row below the board/control layout. Expanded explanations do not cover native controls.
@@ -139,7 +143,7 @@ Changing positions or hiding the tab cancels the old analysis. Kibitz rebuilds p
 
 The **Move analysis** setting is separate from the AI provider. Automatic reuses already available Lichess suggestions after checking their position, score format, and legal continuation. If those results are absent or unusable, local Stockfish takes over. Kibitz does not turn on the website's engine or wait for its review report. Select **Kibitz local only** to always use the bundled engine.
 
-Chess.com native-engine reuse is not enabled; Kibitz uses its local engine there. Whole-game grading keeps a consistent local source even when selected-position advice comes from Lichess. Engine attribution appears in Details. No extra cloud-evaluation API calls are made.
+Chess.com native-engine reuse is not enabled; Kibitz uses its local engine there. The website/local source setting affects analysis-board suggestions. Completed-game review uses local Stockfish for both grading and consequences; it does not read native candidate advice. Engine attribution appears in Details. No extra cloud-evaluation API calls are made.
 
 ### Analyze a position manually
 
@@ -220,6 +224,8 @@ The played move stays in the review heading, with its grade separate from any su
 | Loss above 200 | Blunder |
 
 Mate and terminal outcomes use separate rules, including Checkmate and Missed mate. Scores and grades are provisional search estimates, not the website's accuracy score. Positive scores always favor White. Candidate arrows 1–3 are alternatives for the same player, not consecutive moves in a variation. Blank heatmap squares have not been rated for safety.
+
+The internal Best and Excellent grades are both displayed as **Accurate** during review. Review uses symbols, outlines and concise consequences; the numbered candidate arrows described above belong to analysis boards. A geometric attack alone never earns a consequence cue: the target must be supported by a legal searched line. Later-line effects are explicitly hypothetical, and the highlighted piece is mapped back to its square on the board currently displayed, including en-passant victims and moved pieces.
 
 ### Grounded explanations
 
