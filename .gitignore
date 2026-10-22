@@ -1,5 +1,11 @@
 #Ignore dist && .vscode && node_modules
 node_modules/
+node_modules.kibitz-backup/
 dist/
 *.log
 *.exe
+
+.bundle/
+
+# Planning and generated documentation
+docs/

@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>Kibitz setup</title>
+</head>
+
+<body>
+    <main>
+        <header><span class="brand">? Kibitz</span>
+            <p>Understand the move. See what comes next.</p><span id="theme-label" class="eyebrow">Matches your chess
+                website</span>
+        </header>
+        <section class="start" aria-labelledby="start-heading"><span class="eyebrow">1 ? Your game</span>
+            <h1 id="start-heading">Study on the board you know</h1>
+            <p class="hint">Open a completed game from your Chess.com or Lichess history, or a study board. Guidance
+                appears directly on that board.</p>
+            <div class="actions"><button id="capture-game" type="button">Review selected game</button><button
+                    id="reopen" type="button" class="secondary">Show board card</button></div>
+            <p id="status" role="status">Open a supported study board to begin.</p>
+            <p id="review-status" class="hint" role="status">Use the website?s move controls. You can close this panel
+                during review.</p>
+            <p class="hint">On the board card, use <strong>Candidate heatmap</strong> and <strong>Next-move
+                    arrow</strong> to toggle overlays. They become available when a matching position is analyzed.</p>
+            <details id="pgn-import">
+                <summary>Have a PGN instead?</summary>
+                <p class="hint">Open a matching position on the website first. Import adds move history to the existing
+                    board.</p>
+                <form id="pgn-form"><label>Game PGN<textarea id="review-pgn" rows="4" maxlength="262144" required
+                            spellcheck="false"></textarea></label><button type="submit">Apply PGN on
+                        page</button><label>Or choose a PGN file<input id="pgn-file" type="file"
+                            accept=".pgn,.txt,application/x-chess-pgn,text/plain"></label></form>
+            </details>
+        </section>
+        <form id="settings"><span class="eyebrow">2 ? Your coach</span>
+            <h1>Set up explanations</h1>
+            <p class="hint">Move analysis works immediately. Choose an AI below for extra explanations. Automatic tries
+                Chrome AI ? Ollama ? your optional cloud service.</p>
+            <label>Move suggestions<select id="analysis-source">
+                    <option value="auto">Website analysis when verified, then local engine</option>
+                    <option value="local">Always use local Stockfish</option>
+                </select></label>
+            <p class="hint">Website suggestions must match the selected position. Local analysis fills gaps and rates
+                completed moves consistently.</p><label>Explanation mode<select id="provider">
+                    <option value="auto">Automatic ? local first (recommended)</option>
+                    <option value="chrome">Chrome AI only</option>
+                    <option value="ollama">Ollama only</option>
+                    <option value="gemini">Gemini only</option>
+                    <option value="openai">OpenAI only</option>
+                    <option value="groq">Groq only</option>
+                </select></label>
+            <section class="provider-step" aria-labelledby="chrome-heading">
+                <h2 id="chrome-heading">Chrome AI <span class="badge">Free ? on device</span></h2>
+                <p id="chrome-status" class="hint" role="status">Checking availability?</p><button id="chrome-setup"
+                    type="button" disabled>Enable Chrome AI</button>
+                <p class="hint">If supported, download the model once. No account or API key is needed.</p>
+            </section>
+            <details id="ollama-settings">
+                <summary>Ollama ? another local option</summary>
+                <p class="hint">Install Ollama, download the model below, then run the server with Kibitz?s origin
+                    allowed.</p><label id="ollama-label">Ollama model<input id="ollama-model" maxlength="120"
+                        value="qwen3:4b" autocomplete="off"></label><code id="ollama-pull">ollama pull qwen3:4b</code>
+                <p class="hint">Quit an existing Ollama server before starting it with this setting. PowerShell:</p>
+                <pre id="ollama-command"></pre>
+                <div class="actions"><button id="copy-ollama" type="button" class="secondary">Copy server
+                        command</button><button id="check-ollama" type="button" class="secondary">Check
+                        connection</button></div>
+                <p id="ollama-status" class="hint" role="status">Connection is checked only when you ask.</p><a
+                    href="https://ollama.com/download" target="_blank" rel="noreferrer">Install Ollama</a>
+            </details>
+            <details id="cloud-settings">
+                <summary>Cloud service ? optional</summary>
+                <p class="hint">Add a key only if you want cloud explanations. Cloud receives the position and verified
+                    analysis. Provider charges may apply, including failed attempts. Keys sync with your Chrome profile.
+                </p><label>Cloud fallback<select id="cloud-provider">
+                        <option value="gemini">Gemini</option>
+                        <option value="openai">OpenAI</option>
+                        <option value="groq">Groq</option>
+                    </select></label><label>Cloud model<input id="model" maxlength="120"
+                        autocomplete="off"></label><label id="key-label">API key <span class="hint">Optional in
+                        Automatic mode</span><input id="key" type="password" autocomplete="off"
+                        maxlength="2048"></label>
+            </details>
+            <button type="submit">Save settings</button><span id="saved" role="status"></span>
+        </form>
+        <details>
+            <summary>Advanced ? analyze a FEN</summary>
+            <p class="hint">For a separate study position. Website overlays follow the website board.</p>
+            <form id="manual"><label>Complete FEN<textarea id="fen" rows="3" required
+                        spellcheck="false"></textarea></label><button type="submit">Analyze position</button></form>
+            <section id="manual-result" aria-live="polite"></section>
+        </details>
+        <details>
+            <summary>Advanced ? diagnostics & help</summary>
+            <p class="hint">Chrome AI needs a compatible browser and device. If unavailable, Automatic tries Ollama,
+                then configured cloud services. Engine analysis continues even when no AI is available.</p>
+            <p id="diagnostics" class="hint"></p><a href="https://developer.chrome.com/docs/ai/get-started"
+                target="_blank" rel="noreferrer">Chrome AI requirements</a>
+        </details>
+    </main>
+    <script type="module" src="/src/sidepanel.ts"></script>
+</body>
+
+</html>

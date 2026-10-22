@@ -1,0 +1,10 @@
+{
+  "compilerOptions": {
+    "target": "ES2022", "module": "ESNext", "moduleResolution": "bundler",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"], "strict": true,
+    "esModuleInterop": true, "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true, "noEmit": true,
+    "types": ["chrome", "node"]
+  },
+  "include": ["src/**/*", "tests/**/*", "vite*.ts"]
+}

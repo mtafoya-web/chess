@@ -1,0 +1,8 @@
+Stockfish.js 17.1.0 — lite single-threaded build, unmodified.
+Package and corresponding source: https://www.npmjs.com/package/stockfish/v/17.1.0
+Source repository: https://github.com/nmrugg/stockfish.js
+Corresponding engine source and build scripts (release v17.1.0):
+https://github.com/nmrugg/stockfish.js/tree/v17.1.0
+Source archive: https://github.com/nmrugg/stockfish.js/archive/refs/tags/v17.1.0.tar.gz
+Binary package archive: https://registry.npmjs.org/stockfish/-/stockfish-17.1.0.tgz
+Engine is licensed under GPL-3.0; see engine/COPYING.txt in the built extension.
