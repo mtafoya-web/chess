@@ -1,4 +1,5 @@
 import type { Diagnostic } from './diagnostics';
+import type { ExplanationProgress } from './explanation-state';
 export interface MoveAnalysisRequest{
     type: 'ANALYSIS_REQUEST';
     fen: string;
@@ -41,6 +42,7 @@ export interface Candidate { uci: string; san: string; pv: string; score: number
 export interface Evaluation extends EngineEvaluation { candidates: Candidate[]; terminal?: string; whiteScore: number; engineScore?: Candidate['engineScore'] | { kind: 'terminal'; winner?: 'w' | 'b' }; depth?: number; source?: { kind: string; label: string; depth?: number } }
 export type AnalysisEvent =
     | (AnalysisStreamChunk & { tabId: number })
+    | ({ type: 'EXPLANATION_STATE'; requestId: string; tabId: number; fen: string } & ExplanationProgress)
     | { type: 'ENGINE_RESULT'; requestId: string; tabId: number; result: Evaluation }
     | { type: 'STATUS' | 'ERROR'; requestId: string; tabId: number; text: string; diagnostic?: Diagnostic };
 export interface EngineJob { target: 'offscreen'; type: 'ENGINE_START'; fen: string; requestId: string; tabId: number; manual: boolean; settings: ExecutionSettings; nativeEvaluation?: Evaluation }

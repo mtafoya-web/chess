@@ -1,4 +1,5 @@
 import type { Diagnostic } from './diagnostics';
+import type { ExplanationProgress } from './explanation-state';
 import type { OpeningContext } from './opening-context';
 import type { Evaluation, ExecutionSettings } from './types';
 
@@ -19,6 +20,7 @@ export interface ReviewJob {
     target: 'offscreen'; type: 'REVIEW_START'; request: ReviewRequest; tabId: number; settings: ExecutionSettings; manual?: boolean; nativeEvaluation?: Evaluation;
 }
 export type ReviewEvent =
+    | ({ type: 'REVIEW_EXPLANATION_STATE'; sessionId: string; requestId: string; tabId: number; ply: number; fen: string } & ExplanationProgress)
     | { type: 'REVIEW_OPENING'; sessionId: string; requestId: string; tabId: number; ply: number; opening: OpeningContext }
     | { type: 'REVIEW_RESULT'; sessionId: string; requestId: string; tabId: number; ply: number; before?: Evaluation; after: Evaluation; advice?: Evaluation; feedback?: MoveFeedback; opening?: OpeningContext }
     | { type: 'REVIEW_TEXT'; sessionId: string; requestId: string; tabId: number; text: string; provider?: string }

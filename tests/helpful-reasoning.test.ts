@@ -24,7 +24,7 @@ it('grounds first-move central and cleared-line ideas without claiming an open f
     expect(facts.filter(f => f.kind === 'opened-line').map(f => f.squares[0]).sort()).toEqual(['d1', 'f1']);
     const text = renderExplanation(buildExplanationFacts(DEFAULT_POSITION, result(DEFAULT_POSITION, 'e2e4 e7e5')));
     expect(text).toContain('central foothold'); expect(text).toContain('bishop on F1'); expect(text).not.toMatch(/open.*file|no specific tactic|best evaluation/i);
-    expect(text.split(/(?<=[.!?])\s+/).length).toBeLessThanOrEqual(3);
+    expect(text.split(/(?<=[.!?])\s+/).length).toBeLessThanOrEqual(4);
 });
 it('teaches verified original knight development, actual E5 pressure and retained castling rights', () => {
     const { fen, history } = position(['e2e4', 'e7e5']);
@@ -59,7 +59,7 @@ it('keeps a legal tactical refutation ahead of general opening praise', () => {
     const { fen, history } = position(['f2f3', 'e7e5', 'g2g4']);
     const catalog = buildExplanationFacts(fen, result(fen, 'd8h4'), { summary: '', label: 'Blunder', history, before: result(position(['f2f3', 'e7e5']).fen, 'g1h3') });
     const text = renderExplanation(catalog);
-    expect(text).toContain('delivers checkmate'); expect(text).not.toContain('An alternative');
+    expect(text).toContain('can deliver checkmate'); expect(text).not.toContain('An alternative');
     expect(text).not.toContain('preparing');
     expect(catalog.facts.some(f => f.branch === 'played' && f.id.includes('development'))).toBe(false);
 });

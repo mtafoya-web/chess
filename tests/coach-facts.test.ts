@@ -11,7 +11,7 @@ it('names colored pieces with origins, verified effects, and a legal hypothetica
     const catalog = buildExplanationFacts(fen, result(fen, 'e4d5 e8f7'));
     const text = renderExplanation(catalog);
     expect(text).toContain("captures Black's pawn on D5");
-    expect(text).toContain("central foothold");
+    expect(text).toContain("places a pawn in the center on D5");
     expect(text).not.toContain('possible reply');
     expect(text).not.toContain('Stockfish');
 });
@@ -50,7 +50,7 @@ it('names a different preferred move in the before-position without inventing wh
     const board = new Chess(); playUci(board, 'h2h3');
     const catalog = buildExplanationFacts(board.fen(), result(board.fen(), 'e7e5'), { summary: 'untrusted prose is ignored', label: 'Inaccuracy', before: result(DEFAULT_POSITION, 'e2e4 e7e5'), history: { sessionId: 'a', initialFen: DEFAULT_POSITION, moves: ['h2h3'], ply: 1 } });
     const text = renderExplanation(catalog);
-    expect(text).toContain('evaluated strength');
+    expect(text).toContain('do not establish a specific tactical or positional reason');
     expect(text).not.toContain("alternative");
     expect(catalog.facts.some(f => f.id==='played.alternative')).toBe(false);
     expect(text).not.toContain('untrusted');
@@ -69,3 +69,24 @@ it('does not include an illegal continuation tail or substitute a made-up reply'
     expect(renderExplanation(catalog)).not.toContain('h4');
 });
 
+
+it('orders concrete effects before plain-language meanings for both local and selected plans', () => {
+    const fen = '3k3r/8/7N/8/8/8/8/K7 w - - 0 1';
+    const catalog = buildExplanationFacts(fen, result(fen, 'h6f7'));
+    const plan = {leadFactId:'recommended.move',supportFactId:'recommended.attack.h8',toneVariant:'direct' as const};
+    const text = renderExplanation(catalog, plan);
+    expect(text).toContain("White's knight on F7 checks Black's king on D8");
+    expect(text).toContain("attacks Black's rook on H8");
+    expect(text.indexOf('checks')).toBeLessThan(text.indexOf('attacks'));
+    expect(text.indexOf('attacks')).toBeLessThan(text.indexOf('Check means'));
+    expect(text).toContain('king does not always have to move');
+    expect(catalog.facts.find(f=>f.id==='recommended.attack.h8')?.meaning).toContain('does not by itself prove that the piece can be won');
+    expect(text).not.toMatch(/wins? (the|a) rook|king must move|your skill level/i);
+    expect(renderExplanation(catalog)).toContain('Check means');
+});
+it('does not treat retained castling rights as a castling plan without PV evidence', () => {
+    const board = new Chess(); playUci(board, 'e2e4'); playUci(board, 'e7e5');
+    const catalog = buildExplanationFacts(board.fen(), result(board.fen(), 'g1f3'));
+    expect(catalog.facts.find(f=>f.id==='recommended.castling.kingside')).toBeUndefined();
+    expect(renderExplanation(catalog)).not.toMatch(/castl/i);
+});
