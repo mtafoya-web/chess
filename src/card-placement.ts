@@ -106,25 +106,30 @@ export class CardPlacement {
     }
     /** Add an independent column when the native layout leaves measured horizontal room. */
     private reserveLayoutColumn(board: HTMLElement): boolean {
-        const anchor = board.closest<HTMLElement>('main.analyse,main.round,.board-layout-main,main');
+        const lichess = this.lichess;
+        const anchor = board.closest<HTMLElement>(
+            lichess
+                ? '.round__app,.analyse__board,.board-layout-main,.board-layout'
+                : '.board-layout-main,.board-layout,.board-wrapper'
+        ) ?? board.parentElement;
         if (!anchor || !anchor.parentElement || anchor === document.body || /^(absolute|fixed)$/.test(getComputedStyle(anchor).position)) return false;
-        const before = board.getBoundingClientRect(), layout = anchor.getBoundingClientRect();
-        const parent = anchor.parentElement.getBoundingClientRect();
-        if (layout.width <= 0) return false;
-        const roomRight = parent.right - layout.right;
-        const roomLeft = layout.left - parent.left;
-        const right = roomRight >= 276 && parent.width >= layout.width + 276 && this.viewport >= layout.width + 276;
-        const left = roomLeft >= 276 && parent.width >= layout.width + 276 && this.viewport >= layout.width + 276;
+        const before = board.getBoundingClientRect();
+        const layout = anchor.getBoundingClientRect();
+        if (before.width <= 0 || before.height <= 0) return false;
+        const roomRight = this.viewport - before.right;
+        const roomLeft = before.left;
+        const right = roomRight >= 276;
+        const left = roomLeft >= 276;
         if (!right && !left) return false;
-        const side = right ? 'right' : 'left';
+        const side = left && (!right || roomLeft > roomRight) ? 'left' : 'right';
         const wrapper = document.createElement('div'); wrapper.dataset.kibitzLayout = '';
-        wrapper.style.cssText = `display:grid;grid-template-columns:${side === 'right' ? `${layout.width}px minmax(260px,340px)` : `minmax(260px,340px) ${layout.width}px`};gap:16px;align-items:start;min-width:0;max-width:100%;`;
+        wrapper.style.cssText = `display:grid;grid-template-columns:${side === 'right' ? `${before.width}px minmax(260px,340px)` : `minmax(260px,340px) ${before.width}px`};gap:16px;align-items:start;min-width:0;max-width:100%;`;
         const width = anchor.style.getPropertyValue('width'), priority = anchor.style.getPropertyPriority('width');
         wrapper.style.gridArea = getComputedStyle(anchor).gridArea;
         anchor.before(wrapper);
         if (side === 'right') wrapper.append(anchor, this.slot);
         else wrapper.append(this.slot, anchor);
-        anchor.style.width = `${layout.width}px`;
+        anchor.style.width = `${before.width}px`;
         this.slot.style.gridColumn = side === 'right' ? '2' : '1';
         this.slot.style.paddingTop = `${Math.max(0,before.top-layout.top)}px`;
         this.layoutReservation = {wrapper,anchor,width,priority};

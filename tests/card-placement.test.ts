@@ -172,6 +172,68 @@ it('rechecks sticky native widgets on scroll and moves guidance into safe flow',
     expect(placementCollisions(host)).toEqual([]);
 });
 
+it('places beside the board in Chess.com board-layout containers', () => {
+    vi.stubGlobal('innerWidth', 1400);
+    document.body.innerHTML = '<div class="board-layout"><div class="board-layout-main"><wc-chess-board id="board"></wc-chess-board></div><aside class="sidebar-component" style="position:absolute"></aside></div>';
+    const board = document.getElementById('board')!;
+    const layout = document.querySelector<HTMLElement>('.board-layout-main')!;
+    const sidebar = document.querySelector<HTMLElement>('.sidebar-component')!;
+    const host = document.createElement('div');
+    host.style.height = '200px';
+    const placement = new CardPlacement(host);
+    placements.push(placement);
+    bounds(document.body, () => rect(0, 0, 1400, 900));
+    bounds(document.querySelector<HTMLElement>('.board-layout')!, () => rect(0, 0, 1400, 900));
+    bounds(layout, () => rect(100, 0, 500, 500));
+    bounds(board, () => rect(100, 0, 500, 500));
+    bounds(sidebar, () => rect(1200, 0, 200, 500));
+    bounds(placement.slot, () => placement.slot.parentElement?.hasAttribute('data-kibitz-layout')
+        ? rect(616, 0, 284, 200) : rect(0, 600, 560, 200));
+    bounds(host, () => placement.slot.getBoundingClientRect());
+    const original = document.createElement.bind(document);
+    const create = vi.spyOn(document, 'createElement').mockImplementation(((tag: string, options?: ElementCreationOptions) => {
+        const element = original(tag, options);
+        if (tag === 'div' && element !== placement.slot) bounds(element, () => rect(100, 0, 800, 500));
+        return element;
+    }) as typeof document.createElement);
+
+    placement.attach(board, false);
+
+    expect(document.querySelector('[data-kibitz-layout]')).not.toBeNull();
+    expect(placement.slot.dataset.kibitzSide).toBe('right');
+    create.mockRestore();
+});
+
+it('places beside the board in Lichess round containers', () => {
+    vi.stubGlobal('innerWidth', 1400);
+    document.body.innerHTML = '<main class="round"><div class="round__app"><div class="orientation-white"><cg-board id="board"></cg-board></div></div></main>';
+    const board = document.getElementById('board')!;
+    const round = document.querySelector<HTMLElement>('.round__app')!;
+    const host = document.createElement('div');
+    host.style.height = '200px';
+    const placement = new CardPlacement(host);
+    placements.push(placement);
+    bounds(document.body, () => rect(0, 0, 1400, 900));
+    bounds(document.querySelector<HTMLElement>('main')!, () => rect(0, 0, 1400, 900));
+    bounds(round, () => rect(800, 0, 500, 500));
+    bounds(board, () => rect(800, 0, 500, 500));
+    bounds(placement.slot, () => placement.slot.parentElement?.hasAttribute('data-kibitz-layout')
+        ? rect(508, 0, 276, 200) : rect(0, 600, 560, 200));
+    bounds(host, () => placement.slot.getBoundingClientRect());
+    const original = document.createElement.bind(document);
+    const create = vi.spyOn(document, 'createElement').mockImplementation(((tag: string, options?: ElementCreationOptions) => {
+        const element = original(tag, options);
+        if (tag === 'div' && element !== placement.slot) bounds(element, () => rect(508, 0, 792, 500));
+        return element;
+    }) as typeof document.createElement);
+
+    placement.attach(board, true);
+
+    expect(document.querySelector('[data-kibitz-layout]')).not.toBeNull();
+    expect(placement.slot.dataset.kibitzSide).toBe('left');
+    create.mockRestore();
+});
+
 it('can allocate an independent layout column on the right or left of the board', () => {
     const right = fixture(1400);
     right.adjacent.style.position = 'absolute';
@@ -183,10 +245,12 @@ it('can allocate an independent layout column on the right or left of the board'
         return element;
     }) as typeof document.createElement);
     bounds(document.body, () => rect(0, 0, 1400, 900));
-    bounds(right.main, () => rect(600, 0, 500, 500));
-    bounds(right.board, () => rect(600, 0, 500, 500));
+    bounds(right.main, () => rect(100, 0, 500, 500));
+    bounds(right.board, () => rect(100, 0, 500, 500));
+    bounds(right.adjacent, () => rect(1200, 0, 200, 500));
+    bounds(document.getElementById('native')!, () => rect(1200, 0, 100, 100));
     bounds(right.placement.slot, () => right.placement.slot.parentElement?.hasAttribute('data-kibitz-layout')
-        ? rect(1116, 0, 284, 200) : rect(0, 600, 560, 200));
+        ? rect(616, 0, 284, 200) : rect(0, 600, 560, 200));
     bounds(right.host, () => right.placement.slot.getBoundingClientRect());
     right.placement.attach(right.board, false);
     expect(document.querySelector('[data-kibitz-layout]')).not.toBeNull();
@@ -204,11 +268,13 @@ it('can allocate an independent layout column on the right or left of the board'
         if (tag === 'div' && element !== left.placement.slot) bounds(element, () => rect(0, 0, 1100, 500));
         return element;
     }) as typeof document.createElement);
-    bounds(document.body, () => rect(0, 0, 900, 900));
-    bounds(left.main, () => rect(600, 0, 500, 500));
-    bounds(left.board, () => rect(600, 0, 500, 500));
+    bounds(document.body, () => rect(0, 0, 1400, 900));
+    bounds(left.main, () => rect(800, 0, 500, 500));
+    bounds(left.board, () => rect(800, 0, 500, 500));
+    bounds(left.adjacent, () => rect(1200, 0, 200, 500));
+    bounds(document.getElementById('native')!, () => rect(1200, 0, 100, 100));
     bounds(left.placement.slot, () => left.placement.slot.parentElement?.hasAttribute('data-kibitz-layout')
-        ? rect(324, 0, 276, 200) : rect(0, 600, 560, 200));
+        ? rect(508, 0, 276, 200) : rect(0, 600, 560, 200));
     bounds(left.host, () => left.placement.slot.getBoundingClientRect());
     left.placement.attach(left.board, false);
     expect(document.querySelector('[data-kibitz-layout]')).not.toBeNull();
