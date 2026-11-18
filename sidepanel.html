@@ -13,15 +13,15 @@
             <p>Understand the move. See what comes next.</p><span id="theme-label" class="eyebrow">Matches your chess
                 website</span>
         </header>
-        <section class="start" aria-labelledby="start-heading"><span class="eyebrow">1 ? Your game</span>
-            <h1 id="start-heading">Study on the board you know</h1>
-            <p class="hint">Open a completed game from your Chess.com or Lichess history, or a study board. Guidance
+        <nav class="workspace-nav" aria-label="Kibitz sections"><button type="button" data-tab="review" aria-current="page">Review</button><button type="button" data-tab="lessons">Lessons</button><button type="button" data-tab="settings">Settings</button></nav>
+        <section id="review-page" aria-label="Game review">
+        <section class="start" aria-labelledby="start-heading"><span class="eyebrow">Your game</span>
+            <h1 id="start-heading">Review your game</h1>
+            <p class="hint">Open a completed game or select it on your Chess.com or Lichess history board. Guidance
                 appears directly on that board.</p>
             <div class="actions"><button id="capture-game" type="button">Review selected game</button><button
                     id="reopen" type="button" class="secondary">Show board card</button></div>
             <p id="status" role="status">Open a supported study board to begin.</p>
-            <p id="review-status" class="hint" role="status">Use the website?s move controls. You can close this panel
-                during review.</p>
             <p class="hint">Analysis boards show candidate arrows and a heatmap. Game review focuses on played moves,
                 inaccuracies, mistakes and blunders, with visual cues on the website's board.</p>
             <details id="pgn-import">
@@ -34,17 +34,23 @@
                             accept=".pgn,.txt,application/x-chess-pgn,text/plain"></label></form>
             </details>
         </section>
-        <form id="settings"><span class="eyebrow">2 ? Your coach</span>
+        <section class="first-use" aria-labelledby="first-use-heading"><button id="dismiss-intro" class="secondary" type="button">Hide introduction</button><h2 id="first-use-heading">Make the explanations yours</h2><p>Review works immediately with local analysis. No AI setup is required.</p><label>Learning level<select id="learning-level"><option value="beginner">Beginner: explain the basics</option><option value="intermediate">Intermediate: ideas and short lines</option><option value="advanced">Advanced: concise analysis</option></select></label><details><summary>How review works</summary><p>Start with the key moments, try finding a better move, then reveal the explanation when you are ready. You can change your learning level in any review.</p></details></section>
+        <p id="review-status" class="hint" role="status"></p>
+        <section id="review-overview" aria-label="Game overview"></section>
+        </section>
+        <section id="lessons-page" hidden aria-label="Learning history"><h1>Your lessons</h1><p>Saved on this Chrome profile. Each lesson comes from a reviewed position.</p><div id="level-suggestion"></div><div id="lesson-history"></div><button id="clear-history" class="secondary" type="button">Clear learning history</button><p id="history-status" role="status"></p></section>
+        <section id="settings-page" hidden aria-label="Settings">
+        <form id="settings"><span class="eyebrow">Optional explanations</span>
             <h1>Set up explanations</h1>
             <p class="hint">Move analysis works immediately. Choose an AI below for extra explanations. Automatic tries
-                Chrome AI ? Ollama ? your optional cloud service.</p>
+                Chrome AI, then Ollama, then your optional cloud service.</p>
             <label>Move suggestions<select id="analysis-source">
-                    <option value="auto">Website analysis when verified, then local engine</option>
-                    <option value="local">Always use local Stockfish</option>
+                    <option value="auto">Automatic</option>
+                    <option value="local">Local engine</option>
                 </select></label>
             <p class="hint">Website suggestions must match the selected position. Local analysis fills gaps and rates
                 completed moves consistently.</p><label>Explanation mode<select id="provider">
-                    <option value="auto">Automatic ? local first (recommended)</option>
+                    <option value="auto">Automatic (local first)</option>
                     <option value="chrome">Chrome AI only</option>
                     <option value="ollama">Ollama only</option>
                     <option value="gemini">Gemini only</option>
@@ -52,14 +58,14 @@
                     <option value="groq">Groq only</option>
                 </select></label>
             <section class="provider-step" aria-labelledby="chrome-heading">
-                <h2 id="chrome-heading">Chrome AI <span class="badge">Free ? on device</span></h2>
+                <h2 id="chrome-heading">Chrome AI <span class="badge">Free on this device</span></h2>
                 <p id="chrome-status" class="hint" role="status">Checking availability?</p><button id="chrome-setup"
                     type="button" disabled>Enable Chrome AI</button>
                 <p class="hint">If supported, download the model once. No account or API key is needed.</p>
             </section>
             <details id="ollama-settings">
-                <summary>Ollama ? another local option</summary>
-                <p class="hint">Install Ollama, download the model below, then run the server with Kibitz?s origin
+                <summary>Ollama: local option</summary>
+                <p class="hint">Install Ollama, download the model below, then run the server with Kibitz's origin
                     allowed.</p><label id="ollama-label">Ollama model<input id="ollama-model" maxlength="120"
                         value="qwen3:4b" autocomplete="off"></label><code id="ollama-pull">ollama pull qwen3:4b</code>
                 <p class="hint">Quit an existing Ollama server before starting it with this setting. PowerShell:</p>
@@ -71,7 +77,7 @@
                     href="https://ollama.com/download" target="_blank" rel="noreferrer">Install Ollama</a>
             </details>
             <details id="cloud-settings">
-                <summary>Cloud service ? optional</summary>
+                <summary>Cloud service: optional</summary>
                 <p class="hint">Add a key only if you want cloud explanations. Cloud receives the position and verified
                     analysis. Provider charges may apply, including failed attempts. Keys stay on this device.
                 </p><label>Cloud fallback<select id="cloud-provider">
@@ -86,21 +92,27 @@
                     <button id="remove-key" type="button" class="secondary">Remove saved key</button>
             </details>
             <button type="submit">Save settings</button><span id="saved" role="status"></span>
+            <button id="test-ai" type="button" class="secondary">Test AI</button>
+            <p class="hint">Tests your saved explanation settings with a small verified sample position.</p>
+            <p id="ai-test-status" class="hint" role="status" style="white-space:pre-line"></p>
         </form>
         <details>
-            <summary>Advanced ? analyze a FEN</summary>
+            <summary>Advanced: analyze a FEN</summary>
             <p class="hint">For a separate study position. Website overlays follow the website board.</p>
             <form id="manual"><label>Complete FEN<textarea id="fen" rows="3" required
                         spellcheck="false"></textarea></label><button type="submit">Analyze position</button></form>
             <section id="manual-result" aria-live="polite"></section>
         </details>
         <details>
-            <summary>Advanced ? diagnostics & help</summary>
+            <summary>Advanced: diagnostics & help</summary>
             <p class="hint">Chrome AI needs a compatible browser and device. If unavailable, Automatic tries Ollama,
                 then configured cloud services. Engine analysis continues even when no AI is available.</p>
             <p id="diagnostics" class="hint"></p><a href="https://developer.chrome.com/docs/ai/get-started"
                 target="_blank" rel="noreferrer">Chrome AI requirements</a>
         </details>
+        <details><summary>Help and scoring</summary><p>Kibitz accuracy is an engine-based estimate, not your rating or a prediction of your results. Provisional assessments can change after deeper analysis.</p><p>Core analysis runs locally. Optional cloud explanations send position evidence to the selected provider.</p><label>Find a chess term<input id="glossary-search" type="search" placeholder="Search terms"></label><p id="glossary-status" role="status"></p><dl id="glossary"><dt>PGN</dt><dd>A text record of a chess game.</dd><dt>Evaluation</dt><dd>The engine's estimate of the position. Positive values favor White.</dd><dt>Variation</dt><dd>A possible sequence of moves, separate from what was played.</dd><dt>Pin</dt><dd>A piece cannot move without exposing a more valuable target; legal king safety must still be checked.</dd></dl><a href="https://lichess.org/page/accuracy" target="_blank" rel="noreferrer">How winning-chance accuracy works</a><br><a href="https://lichess.org/page/blind-mode-tutorial" target="_blank" rel="noreferrer">Lichess keyboard and accessibility guide</a></details>
+        <button type="button" id="copy-diagnostics" class="secondary">Copy support diagnostics</button><p id="support-status" role="status"></p>
+        </section>
     </main>
     <script type="module" src="/src/sidepanel.ts"></script>
 </body>

@@ -46,12 +46,14 @@ export function positionEvaluation(chess: Chess): Evaluation | undefined {
         const winner = chess.turn() === 'w' ? 'b' : 'w';
         return { ...evaluation([], 'Checkmate', { kind: 'terminal', winner }), whiteScore: winner === 'w' ? 100 : -100, evaluation: winner === 'w' ? '1–0' : '0–1' };
     }
-    const terminal = chess.isStalemate() ? 'Stalemate' : chess.isThreefoldRepetition() ? 'Threefold repetition' : chess.isDraw() ? 'Draw' : undefined;
+    // Threefold and fifty-move draws require a claim. Do not stop a recorded game
+    // at a claimable position, or erase its engine evaluation with a synthetic draw.
+    const terminal = chess.isStalemate() ? 'Stalemate' : chess.isInsufficientMaterial() ? 'Insufficient material' : undefined;
     return terminal ? evaluation([], terminal, { kind: 'terminal' }) : undefined;
 }
 export function terminalPosition(fen: string): string | undefined {
     const chess = new Chess(fen);
     if (chess.isCheckmate()) return 'Checkmate';
     if (chess.isStalemate()) return 'Stalemate';
-    if (chess.isDraw()) return 'Draw';
+    if (chess.isInsufficientMaterial()) return 'Insufficient material';
 }

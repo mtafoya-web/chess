@@ -4,7 +4,9 @@ export class CardPlacement {
     readonly slot = document.createElement('div');
     private board?: HTMLElement;
     private adjacent?: HTMLElement;
-    private reservation?: { wrapper: HTMLElement; candidate: HTMLElement };
+    private reservation?: { wrapper: HTMLElement; candidate: HTMLElement; owner: HTMLElement; minHeight: string; priority: string; baseline: number };
+    private layoutReservation?: { wrapper: HTMLElement; anchor: HTMLElement; width: string; priority: string };
+    private geometry = '';
     private viewport = -1;
     private frame?: number;
     private retryFrame?: number;
@@ -30,23 +32,31 @@ export class CardPlacement {
     attach(board: HTMLElement, lichess: boolean) {
         if (this.destroyed || !board.isConnected) return;
         const viewport = document.documentElement.clientWidth || innerWidth;
-        const layoutChanged = this.board !== board || this.viewport !== viewport || !this.slot.isConnected;
+        const native = [...document.querySelectorAll<HTMLElement>(NATIVE_LAYOUT)].filter(el => !this.host.contains(el)).slice(0,80);
+        // Ignore positions/heights caused by our own content, but reconsider genuine site/board resizing.
+        const geometry = JSON.stringify([board.getBoundingClientRect().width,board.getBoundingClientRect().height,
+            ...native.map(el => {const r=el.getBoundingClientRect();return [r.width,el.matches('.analyse__tools,.analysis-sidebar,.sidebar-component') ? 0 : r.height];})]);
+        const layoutChanged = this.board !== board || this.viewport !== viewport || this.geometry !== geometry || !this.slot.isConnected;
         const changed = layoutChanged || this.retryRequested;
         if (layoutChanged) {
             this.retryUsed = false;
-            this.resize.disconnect(); this.resize.observe(this.host);
+            this.resize.disconnect(); this.resize.observe(this.host); this.resize.observe(board);
             for (const element of [...document.querySelectorAll<HTMLElement>(NATIVE_LAYOUT)].slice(0, 80)) {
                 if (!element.contains(this.host) && !this.host.contains(element)) this.resize.observe(element);
             }
         }
         this.retryRequested = false;
-        this.board = board; this.viewport = viewport; this.lichess = lichess;
+        this.board = board; this.viewport = viewport; this.lichess = lichess; this.geometry = geometry;
         if (this.host.parentElement !== this.slot) this.slot.append(this.host);
         if (!changed) { this.validate(); return; }
         this.releaseReservation();
         this.adjacent = undefined;
         {
             const candidates = document.querySelectorAll<HTMLElement>(lichess ? '.analyse__tools' : '.analysis-sidebar, .sidebar-component');
+            // Prefer a dedicated slot at the top of a native side column, rather than below all notation.
+            for (const candidate of candidates) {
+                if (this.reserveBeside(candidate, board)) return;
+            }
             for (const candidate of candidates) {
                 if (!this.canTryAdjacent(candidate, board)) continue;
                 candidate.append(this.slot);
@@ -56,17 +66,15 @@ export class CardPlacement {
                     this.adjacent = candidate; return;
                 }
             }
-            // Fixed-height site tool panes cannot safely contain an extra card.
-            // Reserve a separate, reversible column around that pane instead.
-            for (const candidate of candidates) {
-                if (this.reserveBeside(candidate, board)) return;
-            }
+            // If no native side column fits, reserve independent horizontal room.
+            if (this.reserveLayoutColumn(board)) return;
         }
         this.placeBelow();
     }
     private reserveBeside(candidate: HTMLElement, board: HTMLElement): boolean {
         if (candidate.contains(board) || !candidate.parentElement || candidate.parentElement === document.body) return false;
         const before = board.getBoundingClientRect(), rect = candidate.getBoundingClientRect(), style = getComputedStyle(candidate);
+        const owner = candidate.parentElement;
         const parentStyle = getComputedStyle(candidate.parentElement);
         if (rect.width < 260 || rect.left < 0 || rect.right > this.viewport || rect.left < before.right - 1 && rect.right > before.left + 1
             || !/grid/.test(parentStyle.display) || /^(absolute|fixed)$/.test(style.position)) return false;
@@ -74,8 +82,10 @@ export class CardPlacement {
         wrapper.dataset.kibitzColumn = '';
         wrapper.style.cssText = 'display:flex;flex-direction:column;gap:12px;min-width:0;align-self:start;position:relative;';
         wrapper.style.gridArea = style.gridArea;
-        candidate.before(wrapper); wrapper.append(candidate, this.slot);
-        this.reservation = { wrapper, candidate };
+        const minHeight = owner.style.getPropertyValue('min-height'), priority = owner.style.getPropertyPriority('min-height'), baseline = owner.getBoundingClientRect().height;
+        candidate.before(wrapper); wrapper.append(this.slot, candidate);
+        this.reservation = { wrapper, candidate, owner, minHeight, priority, baseline };
+        this.growReservation();
         const after = board.getBoundingClientRect(), card = this.host.getBoundingClientRect();
         if (Math.abs(before.width - after.width) <= 1 && Math.abs(before.height - after.height) <= 1
             && !rectanglesOverlap(card, after)
@@ -84,9 +94,45 @@ export class CardPlacement {
         }
         this.releaseReservation(); return false;
     }
-    private releaseReservation() {
+    private growReservation() {
         if (!this.reservation) return;
-        const { wrapper, candidate } = this.reservation;
+        const {wrapper,owner,baseline} = this.reservation;
+        const needed = `${Math.ceil(Math.max(baseline,wrapper.getBoundingClientRect().bottom-owner.getBoundingClientRect().top))}px`;
+        if (owner.style.minHeight !== needed) owner.style.minHeight = needed;
+    }
+    /** Add an independent column when the native layout leaves measured horizontal room. */
+    private reserveLayoutColumn(board: HTMLElement): boolean {
+        const anchor = board.closest<HTMLElement>('main.analyse,main.round,.board-layout-main,main');
+        if (!anchor || !anchor.parentElement || anchor === document.body || /^(absolute|fixed)$/.test(getComputedStyle(anchor).position)) return false;
+        const before = board.getBoundingClientRect(), layout = anchor.getBoundingClientRect();
+        const parent = anchor.parentElement.getBoundingClientRect();
+        if (layout.width <= 0 || parent.width < layout.width + 276 || this.viewport < layout.width + 276) return false;
+        const wrapper = document.createElement('div'); wrapper.dataset.kibitzLayout = '';
+        wrapper.style.cssText = `display:grid;grid-template-columns:${layout.width}px minmax(260px,340px);gap:16px;align-items:start;min-width:0;max-width:100%;`;
+        const width = anchor.style.getPropertyValue('width'), priority = anchor.style.getPropertyPriority('width');
+        wrapper.style.gridArea = getComputedStyle(anchor).gridArea;
+        anchor.before(wrapper); wrapper.append(anchor,this.slot);
+        anchor.style.width = `${layout.width}px`;
+        this.slot.style.gridColumn = '2'; this.slot.style.paddingTop = `${Math.max(0,before.top-layout.top)}px`;
+        this.layoutReservation = {wrapper,anchor,width,priority};
+        const after = board.getBoundingClientRect(), card = this.host.getBoundingClientRect();
+        if (Math.abs(before.width-after.width)<=1 && Math.abs(before.height-after.height)<=1
+            && card.left>=after.right && card.top<after.bottom && this.isAllocated() && !placementCollisions(this.host).length) {
+            this.adjacent = wrapper; return true;
+        }
+        this.releaseReservation(); return false;
+    }
+    private releaseReservation() {
+        if (this.layoutReservation) {
+            const {wrapper,anchor,width,priority} = this.layoutReservation;
+            if (width) anchor.style.setProperty('width',width,priority); else anchor.style.removeProperty('width');
+            if (wrapper.parentElement) wrapper.before(anchor,this.slot);
+            wrapper.remove(); this.layoutReservation = undefined;
+            this.slot.style.gridColumn = '1 / -1'; this.slot.style.paddingTop = '';
+        }
+        if (!this.reservation) return;
+        const { wrapper, candidate, owner, minHeight, priority } = this.reservation;
+        if (minHeight) owner.style.setProperty('min-height',minHeight,priority); else owner.style.removeProperty('min-height');
         if (wrapper.parentElement) wrapper.before(candidate);
         if (wrapper.contains(this.slot)) wrapper.before(this.slot);
         wrapper.remove(); this.reservation = undefined;
@@ -157,6 +203,7 @@ export class CardPlacement {
         if (anchor !== this.slot && anchor.nextElementSibling !== this.slot) anchor.after(this.slot);
     }
     private validate() {
+        this.growReservation();
         if (this.adjacent && (!this.isAllocated() || placementCollisions(this.host).length)) {
             this.placeBelow();
             // Site tracks may settle one frame after Details/text growth. Allow

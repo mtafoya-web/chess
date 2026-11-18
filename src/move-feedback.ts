@@ -1,5 +1,6 @@
 import type { Evaluation } from './types';
 import type { MoveFeedback, ReviewMove } from './review-types';
+import { chanceLoss, moveAccuracy } from './review-scoring';
 
 /** All engine scores are from White's perspective, independent of board orientation. */
 export function moveFeedback(move: ReviewMove, before: Evaluation, after: Evaluation): MoveFeedback {
@@ -17,8 +18,11 @@ export function moveFeedback(move: ReviewMove, before: Evaluation, after: Evalua
     if (nextWinner) return { ...base, label: best?.uci === move.uci ? 'Best' : 'Review', summary: `Stockfish still finds a forced mate against ${move.color === 'w' ? 'White' : 'Black'} after ${move.san}.` };
     const cp = (result: Evaluation) => result.engineScore?.kind === 'cp' ? result.engineScore.value : result.engineScore?.kind === 'terminal' ? 0 : Math.round(result.whiteScore * 100);
     const lossCp = Math.max(0, Math.round((cp(before) - cp(after)) * (move.color === 'w' ? 1 : -1)));
-    const label = best?.uci === move.uci ? 'Best' : lossCp <= 20 ? 'Excellent' : lossCp <= 50 ? 'Good' : lossCp <= 100 ? 'Inaccuracy' : lossCp <= 200 ? 'Mistake' : 'Blunder';
+    const lossWinPercent = chanceLoss(before, after, move.color);
+    const contradictory = best?.uci === move.uci && lossWinPercent > 2;
+    const label = contradictory ? 'Review' : best?.uci === move.uci ? 'Best' : lossWinPercent <= 2 ? 'Excellent' : lossWinPercent <= 5 ? 'Good' : lossWinPercent <= 10 ? 'Inaccuracy' : lossWinPercent <= 20 ? 'Mistake' : 'Blunder';
     const outcome = after.terminal ? ` The position is ${after.terminal.toLowerCase()}.` : '';
     const alternative = best && best.uci !== move.uci ? ` Stockfish preferred ${best.san}.` : '';
-    return { ...base, label, lossCp, summary: `${move.san}: ${label.toLowerCase()}. ${lossCp ? `About ${(lossCp / 100).toFixed(2)} pawns lost in this search.` : 'Keeps roughly the same evaluation.'}${alternative}${outcome}` };
+    return { ...base, label, lossCp, lossWinPercent, accuracy: moveAccuracy(lossWinPercent), provisional: contradictory,
+        summary: contradictory ? `${move.san}: the searches disagree. A deeper comparison is needed.` : `${move.san}: ${label.toLowerCase()}. ${lossCp ? `The evaluation worsened by ${(lossCp / 100).toFixed(2)} pawn units in this search.` : 'Keeps roughly the same evaluation.'}${alternative}${outcome}` };
 }

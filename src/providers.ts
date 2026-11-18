@@ -2,8 +2,10 @@ import { ORIGINS, type Evaluation, type ExecutionSettings, type Provider, type R
 import { diagnostic, createDiagnosticReporter, type DiagnosticReporter } from './diagnostics';
 import { explainWithChrome } from './chrome-ai';
 import { buildExplanationFacts, type ReviewFacts } from './explanation-facts';
-import { COACH_PROFILE, coachPrompt, renderExplanation, validatePlan, type ExplanationPlan } from './coach-prompt';
+import { COACH_PROFILE, coachPrompt, planJson, renderExplanation, validatePlan, type ExplanationPlan } from './coach-prompt';
 import { PROVIDER_NAMES } from './explanation-state';
+import { ProviderFailure, failureReason, type FailureReason } from './provider-failures';
+import { EXPLANATION_SCHEMA } from './explanation-schema';
 
 export { PROVIDER_NAMES } from './explanation-state';
 
@@ -34,8 +36,11 @@ export async function* records(body: ReadableStream<Uint8Array>, signal: AbortSi
         signal.throwIfAborted();
     } finally { signal.removeEventListener('abort', abort); await reader.cancel().catch(() => {}); reader.releaseLock(); }
 }
-class InvalidProviderResponse extends Error {
-    constructor() { super('Provider returned an invalid response.'); }
+class InvalidProviderResponse extends ProviderFailure {
+    constructor(reason: FailureReason = 'invalid-format') { super(reason); this.message = 'Provider returned an invalid response.'; }
+}
+function invalidPlanReason(text: string): FailureReason {
+    try { const value = JSON.parse(planJson(text)); return value && typeof value === 'object' && typeof value.leadFactId === 'string' ? 'unsupported-facts' : 'invalid-format'; } catch { return 'invalid-format'; }
 }
 const object = (value: unknown): value is Record<string, unknown> => !!value && typeof value === 'object' && !Array.isArray(value);
 function stringDelta(value: unknown): string {
@@ -74,43 +79,44 @@ export function deltaFrom(record: string, provider: RemoteProvider): string {
     let data: unknown;
     try { data = JSON.parse(text); } catch { throw new InvalidProviderResponse(); }
     if (!object(data)) throw new InvalidProviderResponse();
-    if (data.error) throw new Error('Provider returned an error. Check the selected model and account.');
+    if (data.error) { const error = new ProviderFailure('http'); error.message = 'Provider returned an error. Check the selected model and account.'; throw error; }
     return REMOTE_ADAPTERS[provider].delta(data);
 }
 interface RemoteAdapter {
     request(model: string, prompt: string, key?: string): { url: string; headers?: Record<string, string>; payload: object };
     delta(data: Record<string, unknown>): string;
 }
-const compatibleAdapter = (url: string): RemoteAdapter => ({
+const compatibleAdapter = (url: string, json = false): RemoteAdapter => ({
     request: (model, prompt, key) => ({ url, headers: { Authorization: `Bearer ${key}` }, payload: {
-        model, messages: [{ role: 'user', content: prompt }], stream: true, max_tokens: 180, temperature: 0.2,
+        model, messages: [{ role: 'user', content: prompt }], stream: true, max_tokens: 240, temperature: 0.2,
+        ...(json ? {response_format:{type:'json_object'}} : {}),
     } }), delta: compatibleDelta,
 });
 const REMOTE_ADAPTERS: Record<RemoteProvider, RemoteAdapter> = {
     ollama: { request: (model, prompt) => ({ url: 'http://localhost:11434/api/generate', payload: {
-        model, prompt, stream: true, think: false, options: { num_predict: 160, temperature: 0.2 },
+        model, prompt, stream: true, think: false, format: EXPLANATION_SCHEMA, options: { num_predict: 240, temperature: 0.2 },
     } }), delta: ollamaDelta },
     gemini: { request: (model, prompt, key) => ({
         url: `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:streamGenerateContent?alt=sse`,
         headers: { 'x-goog-api-key': key! }, payload: { contents: [{ parts: [{ text: prompt }] }], generationConfig: {
-            maxOutputTokens: 240, temperature: 0.2,
+            maxOutputTokens: 300, temperature: 0.2, responseMimeType: 'application/json',
             ...(/^gemini-2\.5-flash/.test(model) ? { thinkingConfig: { thinkingBudget: 0 } } : {}),
         } },
     }), delta: geminiDelta },
-    openai: compatibleAdapter('https://api.openai.com/v1/chat/completions'),
+    openai: compatibleAdapter('https://api.openai.com/v1/chat/completions', true),
     groq: compatibleAdapter('https://api.groq.com/openai/v1/chat/completions'),
 };
 async function explainRemote(settings: ExecutionSettings, provider: RemoteProvider, prompt: string, signal: AbortSignal, onDelta: (delta: string) => void) {
     const model = settings.models[provider].trim();
-    if (!model || /[/?#]/.test(model) && provider === 'gemini') throw new Error('Set a valid model in settings.');
+    if (!model || /[/?#]/.test(model) && provider === 'gemini') throw new ProviderFailure('model');
     const key = provider === 'ollama' ? undefined : settings.keys[provider];
-    if (provider !== 'ollama' && !key) throw new Error('Add an API key in Kibitz settings.');
+    if (provider !== 'ollama' && !key) throw new ProviderFailure('missing-key');
     const { url, headers: providerHeaders, payload } = REMOTE_ADAPTERS[provider].request(model, prompt, key);
     const headers = { 'Content-Type': 'application/json', ...providerHeaders };
     let response: Response;
     try { response = await fetch(url, { method: 'POST', headers, body: JSON.stringify(payload), signal }); }
-    catch { signal.throwIfAborted(); throw new Error(provider === 'ollama' ? 'Ollama unavailable. Check its server and allowed extension origin.' : 'Provider unavailable. Check your connection and host permission.'); }
-    if (!response.ok) throw new Error(`Provider returned HTTP ${response.status}. Check your model, key and quota.`);
+    catch { signal.throwIfAborted(); throw new ProviderFailure('connection'); }
+    if (!response.ok) throw new ProviderFailure(response.status === 401 ? 'authentication' : response.status === 403 ? 'permission' : response.status === 429 ? 'quota' : response.status === 404 ? 'model' : 'http');
     if (!response.body) throw new Error('Provider returned no stream.');
     let total = 0;
     for await (const record of records(response.body, signal)) {
@@ -133,7 +139,7 @@ const ADAPTERS: Record<Provider, ProviderAdapter> = {
     chrome: { timeout: 12000, explain: (_settings, prompt, signal, onDelta) => explainWithChrome(prompt, signal, onDelta) },
     ollama: remoteAdapter('ollama'), gemini: remoteAdapter('gemini'), openai: remoteAdapter('openai'), groq: remoteAdapter('groq'),
 };
-export async function explain(settings: ExecutionSettings, fen: string, result: Evaluation, signal: AbortSignal, onDelta: (delta: string) => void, onStatus: (text: string) => void = () => {}, reviewFacts?: ReviewFacts, onDiagnostic: DiagnosticReporter = () => {}): Promise<Provider | 'facts'> {
+export async function explain(settings: ExecutionSettings, fen: string, result: Evaluation, signal: AbortSignal, onDelta: (delta: string) => void, onStatus: (text: string) => void = () => {}, reviewFacts?: ReviewFacts, onDiagnostic: DiagnosticReporter = () => {}, options: {cache?:boolean} = {}): Promise<Provider | 'facts'> {
     signal.throwIfAborted();
     // Changing models, provider preferences or credentials invalidates every plan.
     // Credentials stay only in this private configuration snapshot, never in cache keys.
@@ -148,17 +154,17 @@ export async function explain(settings: ExecutionSettings, fen: string, result: 
     for (const provider of chain) {
         signal.throwIfAborted();
         if (Date.now() >= deadline) break;
-        if (provider !== 'chrome' && provider !== 'ollama' && !settings.keys[provider]) continue;
+        if (provider !== 'chrome' && provider !== 'ollama' && !settings.keys[provider]) { report(diagnostic('PROVIDER_UNAVAILABLE',{provider,reason:'missing-key'})); continue; }
         onStatus(`Trying ${PROVIDER_NAMES[provider]}…`);
         const attempt = new AbortController();
         const cancel = () => attempt.abort(signal.reason);
         signal.addEventListener('abort', cancel, { once: true });
         const adapter = ADAPTERS[provider];
-        const timeout = setTimeout(() => attempt.abort(new Error('Provider timed out.')), Math.min(adapter.timeout, deadline - Date.now()));
+        const timeout = setTimeout(() => attempt.abort(new ProviderFailure('timeout')), Math.min(adapter.timeout, deadline - Date.now()));
         // The complete catalog includes history, branch, opening metadata and evidence.
         const cacheKey = JSON.stringify([COACH_PROFILE, provider, catalog]);
         const cached = plans.get(cacheKey);
-        const approved = cached && cached.expires > Date.now() ? validatePlan(JSON.stringify(cached.plan), catalog) : undefined;
+        const approved = options.cache !== false && cached && cached.expires > Date.now() ? validatePlan(JSON.stringify(cached.plan), catalog) : undefined;
         let reused: ExplanationPlan | undefined;
         let text = '';
         const collect = (delta: string) => { text += delta.slice(0, Math.max(0, 600 - text.length)); };
@@ -171,10 +177,19 @@ export async function explain(settings: ExecutionSettings, fen: string, result: 
                         // Include the service-worker permission check in the provider deadline.
                         const permitted: unknown = await chrome.runtime.sendMessage({ type: 'PROVIDER_PERMISSION', origin: ORIGINS[provider] });
                         attempt.signal.throwIfAborted();
-                        if (!object(permitted) || permitted.granted !== true) throw new Error('Provider permission unavailable.');
+                        if (!object(permitted) || permitted.granted !== true) throw new ProviderFailure('permission');
                     }
                     if (approved) reused = approved;
-                    else await adapter.explain(settings, prompt, attempt.signal, collect);
+                    else {
+                        await adapter.explain(settings, prompt, attempt.signal, collect);
+                        // One local repair, inside the same deadline. Never repeat paid inference automatically.
+                        if ((provider === 'chrome' || provider === 'ollama') && !validatePlan(text,catalog)) {
+                            report(diagnostic('INVALID_PROVIDER_RESPONSE',{provider,reason:invalidPlanReason(text)}));
+                            onStatus(`Retrying ${PROVIDER_NAMES[provider]} with the approved fact IDs…`);
+                            text = '';
+                            await adapter.explain(settings, `${prompt}\nYour last plan was invalid. Return only JSON using the exact approved fact IDs. Omit uncertain support, reply and evidenceStepIds.`, attempt.signal, collect);
+                        }
+                    }
                 })();
                 void work.then(resolve, reject);
             });
@@ -182,15 +197,15 @@ export async function explain(settings: ExecutionSettings, fen: string, result: 
             if (!reused && !text.trim()) throw new InvalidProviderResponse();
             // Commit only a successful attempt so a failed stream cannot mix providers' text.
             const plan = reused ?? validatePlan(text, catalog);
-            if (!plan) throw new InvalidProviderResponse();
+            if (!plan) throw new InvalidProviderResponse(invalidPlanReason(text));
             plans.delete(cacheKey);
-            if (configuration === nextConfiguration) plans.set(cacheKey, { plan, expires: Date.now() + 300000 });
+            if (options.cache !== false && configuration === nextConfiguration) plans.set(cacheKey, { plan, expires: Date.now() + 300000 });
             while (plans.size > 40) plans.delete(plans.keys().next().value!);
             onDelta(renderExplanation(catalog, plan));
             return provider;
         } catch (error) {
             signal.throwIfAborted();
-            report(diagnostic(error instanceof InvalidProviderResponse ? 'INVALID_PROVIDER_RESPONSE' : 'PROVIDER_UNAVAILABLE', { provider }));
+            report(diagnostic(error instanceof InvalidProviderResponse ? 'INVALID_PROVIDER_RESPONSE' : 'PROVIDER_UNAVAILABLE', { provider, reason:failureReason(error) }));
             if (settings.provider !== 'auto') return fallback();
         } finally { clearTimeout(timeout); signal.removeEventListener('abort', cancel); attempt.abort(); }
     }

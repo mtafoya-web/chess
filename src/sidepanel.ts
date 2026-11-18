@@ -1,3 +1,4 @@
+import { ReviewPanel } from './review-panel';
 import { readableMove } from './readable-move';
 import { sendBackground, isPanelMessage, isBackgroundSender } from './messages';
 import './sidepanel.css';
@@ -7,7 +8,8 @@ import { renderMarkdown } from './markdown';
 import { chromeAvailability, downloadChromeAI } from './chrome-ai';
 import { applySiteTheme, themePageUrl } from './theme';
 import { KIBITZ_MARK } from './wordmark';
-import { explanationStatus } from './explanation-state';
+import { explanationStatus, PROVIDER_NAMES } from './explanation-state';
+import { isAiTestResult, providerFailureText } from './provider-failures';
 import { buildExplanationFacts } from './explanation-facts';
 import { renderExplanation } from './coach-prompt';
 
@@ -26,13 +28,25 @@ let replacements: Partial<Record<CloudProvider, string | null>> = {};
 let manualId = '', manualText = '', manualFen = '';
 const manualResult = element('manual-result');
 const send = sendBackground;
+element<HTMLButtonElement>('test-ai').addEventListener('click', async () => {
+    const button = element<HTMLButtonElement>('test-ai'), output = element('ai-test-status');
+    button.disabled = true; output.textContent = 'Testing AI in the explanation worker…';
+    try {
+        const response = await send({type:'TEST_AI'});
+        if (!isAiTestResult(response.test)) throw new Error('Test unavailable. Reopen settings and try again.');
+        const result = response.test;
+        output.textContent = [result.provider === 'facts' ? 'No AI provider completed the sample explanation.' : `${PROVIDER_NAMES[result.provider]} produced a validated sample explanation.`,
+            ...result.attempts.map(providerFailureText), result.provider === 'facts' ? '' : result.text].filter(Boolean).join('\n');
+    } catch { output.textContent = 'Test unavailable. Reopen settings and try again.'; }
+    finally { button.disabled = false; }
+});
 let port: chrome.runtime.Port;
 function connect() {
     port = chrome.runtime.connect({ name: 'panel' });
     port.onMessage.addListener((event: AnalysisEvent & { manual: boolean }) => {
         if (!isPanelMessage(event)) return;
         if (receiveTheme(event)) return;
-        if (event.type.startsWith('REVIEW_')) return;
+        if (event.type.startsWith('REVIEW_')) { reviewPanel.changed(); return; }
         if (!event.manual) {
             if (event.type === 'EXPLANATION_STATE') status.textContent = explanationStatus(event);
             if (event.type === 'STATUS' || event.type === 'ERROR') status.textContent = event.text;
@@ -138,6 +152,8 @@ void send({ type: 'GET_SETTINGS' }).then(response => {
     settings = response.settings; configured = response.configured; display();
 }).catch(() => { saved.textContent = 'Could not load settings.'; });
 element('diagnostics').textContent = `Extension origin: chrome-extension://${chrome.runtime.id} · Stockfish 17.1 · single-threaded WASM`;
+const reviewPanel = new ReviewPanel();
+window.addEventListener('pagehide',()=>reviewPanel.destroy());
 connect();
 void send({ type: 'REOPEN' }).catch(() => {});
 
@@ -147,7 +163,7 @@ async function startPageReview(pgn?: string) {
     try {
         const response = await send(pgn === undefined ? { type: 'START_PAGE_REVIEW' } : { type: 'IMPORT_PAGE_REVIEW', pgn });
         if (response?.error) throw new Error(response.error);
-        reviewStatus.textContent = `Review started on the website: ${response.title ?? 'selected game'}. Use the site's move controls. You can close this panel.`;
+        reviewStatus.textContent = `Review started on the website: ${response.title ?? 'selected game'}. Use the board card or guided review to continue.`;
     } catch (error) { reviewStatus.textContent = error instanceof Error ? error.message : 'Could not start review on this page.'; }
 }
 element('capture-game').addEventListener('click', () => { void startPageReview(); });

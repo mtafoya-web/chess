@@ -39,7 +39,7 @@ export const ORIGINS: Record<RemoteProvider, string> = {
     openai: 'https://api.openai.com/*', groq: 'https://api.groq.com/*',
 };
 export interface Candidate { uci: string; san: string; pv: string; score: number; mate?: number; uciPv?: string[]; sanPv?: string[]; depth?: number; engineScore?: { kind: 'cp'; value: number } | { kind: 'mate'; winner: 'w' | 'b'; moves: number } }
-export interface Evaluation extends EngineEvaluation { candidates: Candidate[]; terminal?: string; whiteScore: number; engineScore?: Candidate['engineScore'] | { kind: 'terminal'; winner?: 'w' | 'b' }; depth?: number; source?: { kind: string; label: string; depth?: number } }
+export interface Evaluation extends EngineEvaluation { candidates: Candidate[]; terminal?: string; whiteScore: number; engineScore?: Candidate['engineScore'] | { kind: 'terminal'; winner?: 'w' | 'b' }; depth?: number; search?: { profile: string; movetime: number; multiPV: number }; source?: { kind: string; label: string; depth?: number } }
 export type AnalysisEvent =
     | (AnalysisStreamChunk & { tabId: number })
     | ({ type: 'EXPLANATION_STATE'; requestId: string; tabId: number; fen: string } & ExplanationProgress)

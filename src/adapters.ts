@@ -29,7 +29,20 @@ export function allowedContext(doc: Document, url: URL, native?: NativeReviewSna
     if (url.hostname === 'www.chess.com') {
         if (/^\/(analysis|practice)(\/|$)/.test(url.pathname)) return true;
         if (/^\/play\/computer(\/|$)/.test(url.pathname)) return true;
-        return /^\/game\//.test(url.pathname) && !!doc.querySelector('.game-over-modal, .game-over-component, [data-game-status="finished"]');
+        const finished = !!doc.querySelector('.game-over-modal, .game-over-component, [data-game-status="finished"], [data-game-id]');
+        if (!finished) {
+            try {
+                const board = doc.querySelector('wc-chess-board, chess-board') as Element & { game?: { getHeaders?: () => unknown } } | null;
+                const headers = board?.game?.getHeaders?.();
+                if (headers && typeof headers === 'object') {
+                    const result = (headers as Record<string, unknown>).Result;
+                    if (typeof result === 'string' && /^(1-0|0-1|1\/2-1\/2)$/.test(result)) {
+                        return /^\/game\//.test(url.pathname) || /^\/(?:games|member)(?:\/|$)/.test(url.pathname);
+                    }
+                }
+            } catch { /* fall through */ }
+        }
+        return (/^\/game\//.test(url.pathname) || /^\/(?:games|member)(?:\/|$)/.test(url.pathname)) && finished;
     }
     return false;
 }

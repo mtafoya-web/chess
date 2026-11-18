@@ -28,11 +28,11 @@ it('continues from unsupported Chrome claims to a validated local model without 
 it('tries the permitted configured cloud provider when both local plans are invalid', async () => {
     chromePlan('{"leadFactId":"invented","toneVariant":"direct"}');
     vi.stubGlobal('chrome', { runtime: { sendMessage: async () => ({ granted: true }) } });
-    const fetcher = vi.fn().mockResolvedValueOnce(ollama('not a plan')).mockResolvedValueOnce(new Response('data: ' + JSON.stringify({ candidates: [{ content: { parts: [{ text: valid }] } }] }) + '\n'));
+    const fetcher = vi.fn().mockResolvedValueOnce(ollama('not a plan')).mockResolvedValueOnce(ollama('not a plan')).mockResolvedValueOnce(new Response('data: ' + JSON.stringify({ candidates: [{ content: { parts: [{ text: valid }] } }] }) + '\n'));
     vi.stubGlobal('fetch', fetcher);
     const output = vi.fn();
     expect(await explain(config(), DEFAULT_POSITION, result, new AbortController().signal, output)).toBe('gemini');
-    expect(output).toHaveBeenCalledOnce(); expect(fetcher).toHaveBeenCalledTimes(2);
+    expect(output).toHaveBeenCalledOnce(); expect(fetcher).toHaveBeenCalledTimes(3);
 });
 
 it('reuses only validated plans and invalidates them for changed evidence, model, credentials and expiry', async () => {

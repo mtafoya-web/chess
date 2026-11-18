@@ -9,10 +9,10 @@ export interface GameSnapshot {
 // Serialized into MAIN world. All runtime dependencies must stay inside this function.
 export function readGameSnapshot(): GameSnapshot | undefined {
     const url = new URL(location.href);
-    const gameId = url.hostname === 'www.chess.com'
+    let gameId = url.hostname === 'www.chess.com'
         ? /^\/(?:game\/(?:live|daily)|live\/game|analysis\/game\/(?:live|daily))\/(\d+)(?:\/|$)/.exec(url.pathname)?.[1]
         : url.hostname === 'lichess.org' ? /^\/([a-zA-Z0-9]{8})(?:[a-zA-Z0-9]{4})?(?:\/(?:white|black))?\/?$/.exec(url.pathname)?.[1] : undefined;
-    if (!gameId) return;
+    let identityUrl = url.href;
     const running = !!document.querySelector('.rclock.running, .clock-component.clock-player-turn, .back-to-game, .analyse.is-relay');
     const resultNodes = document.querySelectorAll<HTMLElement>('.game__meta .result, .analyse__tools .result, .result-wrap .result, .game-over-modal, .game-over-component, [data-game-status="finished"], [data-result]');
     let result: string | undefined;
@@ -47,16 +47,61 @@ export function readGameSnapshot(): GameSnapshot | undefined {
             })() : undefined;
             // A SPA can retain the preceding board while the selected URL changes.
             // Only use its export when the game's own headers identify this game.
-            if (url.hostname === 'www.chess.com' && (linkedId === gameId || (!link && header('GameId') === gameId))) {
+            if (url.hostname === 'www.chess.com' && (!gameId || linkedId === gameId || (!link && header('GameId') === gameId))) {
                 exportedPgn = pgn;
+                if (!gameId) gameId = linkedId ?? (header('GameId')?.match(/^\d+$/)?.[0]);
+                if (linkedId && link) {
+                    try { identityUrl = new URL(link).href; } catch { /* keep the history URL */ }
+                } else if (!gameId && link) {
+                    try { identityUrl = new URL(link).href; } catch { /* keep the history URL */ }
+                }
                 const value = header('Result');
                 if (value && /^(1-0|0-1|1\/2-1\/2)$/.test(value)) exportedResult = value;
             }
         }
     } catch { /* Export may not be ready; offer PGN import instead. */ }
+    // Chess.com and Lichess can retain a history/list URL while rendering a selected
+    // completed board. Resolve that selected board before requiring an individual game URL.
+    if (!gameId) {
+        let selectedLink: HTMLAnchorElement | undefined;
+        for (const anchor of Array.from(document.querySelectorAll<HTMLAnchorElement>('a[href]'))) {
+            let candidate: string | undefined;
+            const href = anchor.getAttribute('href') ?? '';
+            if (url.hostname === 'www.chess.com') {
+                candidate = /^\/(?:game\/(?:live|daily)|live\/game|analysis\/game\/(?:live|daily))\/(\d+)(?:\/|$)/.exec(new URL(href, url.origin).pathname)?.[1];
+            } else if (url.hostname === 'lichess.org') {
+                if (/\/game\/export\//.test(href)) candidate = /\/game\/export\/([a-zA-Z0-9]{8})(?:[a-zA-Z0-9]{4})?(?:[/?]|$)/.exec(href)?.[1];
+                if (!candidate) candidate = /^\/([a-zA-Z0-9]{8})(?:[a-zA-Z0-9]{4})?(?:\/(?:white|black))?\/?$/.exec(new URL(href, url.origin).pathname)?.[1];
+            }
+            if (!candidate) continue;
+            const selected = anchor.matches('.active, .selected, [aria-current="true"], [aria-pressed="true"]')
+                || !!anchor.closest('.active, .selected, [aria-current="true"], [aria-pressed="true"]');
+            if (selected) { selectedLink = anchor; gameId = candidate; break; }
+        }
+        if (selectedLink) {
+            try {
+                if (url.hostname === 'lichess.org') {
+                    identityUrl = `https://lichess.org/${gameId}`;
+                } else {
+                    const resolved = new URL(selectedLink.href);
+                    if (resolved.protocol === 'https:' && resolved.hostname === url.hostname) identityUrl = resolved.href;
+                }
+            } catch { /* keep the history URL */ }
+        }
+        if (!gameId) {
+            for (const node of Array.from(document.querySelectorAll<HTMLElement>('[data-game-id], [data-gameid], [data-id]'))) {
+                const candidate = node.dataset.gameId ?? node.dataset.gameid ?? node.dataset.id;
+                if (candidate && /^(?:\d+|[a-zA-Z0-9]{8}(?:[a-zA-Z0-9]{4})?)$/.test(candidate)
+                    && (node.matches('.active, .selected, [aria-current="true"]') || !!node.closest('.active, .selected, [aria-current="true"]'))) {
+                    gameId = candidate; break;
+                }
+            }
+        }
+    }
+    if (!gameId) return;
     result ??= exportedResult;
     const completed = !running && (resultNodes.length > 0 || !!statusResult || !!exportedResult);
-    const snapshot: GameSnapshot = { url: url.href, gameId, completed, result };
+    const snapshot: GameSnapshot = { url: identityUrl, gameId, completed, result };
     if (!completed) return snapshot;
     const values: unknown[] = exportedPgn ? [exportedPgn] : [];
     for (const node of document.querySelectorAll<HTMLElement>('textarea[name="pgn"], textarea.pgn, .pgn textarea, .pgn .copyable, .analyse__underboard textarea.copyable, [data-pgn], script[type="application/x-chess-pgn"]')) {

@@ -129,6 +129,12 @@ export function resolveReviewPly(session: ReviewSession, snapshot: NativeReviewS
 export function navigateNativeReview(request: { direction: 'previous' | 'next' | 'first' | 'last' | 'select'; ply?: number; expectedUrl: string }): { ok: boolean } {
     if (location.href !== request.expectedUrl) return { ok: false };
     if (location.protocol !== 'https:' || !['www.chess.com','lichess.org'].includes(location.hostname) || document.querySelector('.rclock.running,.clock-component.clock-player-turn,.back-to-game')) return {ok:false};
+    if ((request.direction === 'first' || request.direction === 'select' && request.ply === 0)) {
+        const nodes = [...document.querySelectorAll<HTMLElement>('.analyse__controls [data-act="first"], .analyse__controls .first, .analyse__controls [data-icon=""], .board-controls [data-action="first"], .board-controls [aria-label="First Move"], [data-cy="move-first"]')];
+        const available = [...new Set(nodes)].filter(n => !n.hasAttribute('disabled') && n.getAttribute('aria-disabled') !== 'true');
+        if (available.length !== 1) return { ok: false };
+        available[0].click(); return { ok: true };
+    }
     if(request.direction==='select' && Number.isInteger(request.ply) && request.ply!>0 && request.ply!<=1500){
         const nodes=[...document.querySelectorAll<HTMLElement>('.move-list [data-ply],.vertical-move-list [data-ply],.analyse__moves [data-ply],.tview2 [data-ply],.round__moves [data-ply]')].filter(node=>Number(node.dataset.ply)===request.ply);
         if(nodes.length!==1 || nodes[0].getAttribute('aria-disabled')==='true' || nodes[0].hasAttribute('disabled'))return {ok:false};

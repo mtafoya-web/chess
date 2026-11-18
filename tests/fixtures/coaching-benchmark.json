@@ -1,0 +1,75 @@
+[
+  {
+    "id": "opening-development",
+    "category": "opening",
+    "moves": [
+      "e4",
+      "e5",
+      "Nf3"
+    ],
+    "ply": 3,
+    "focus": "Explain verified development without claiming the move prevents every central pawn push."
+  },
+  {
+    "id": "fools-mate-warning",
+    "category": "tactics",
+    "moves": [
+      "f3",
+      "e5",
+      "g4",
+      "Qh4#"
+    ],
+    "ply": 3,
+    "focus": "Identify the immediate mating reply and affected king."
+  },
+  {
+    "id": "central-recapture-options",
+    "category": "positional",
+    "moves": [
+      "e4",
+      "e6",
+      "d3",
+      "d5",
+      "Nf3",
+      "f5",
+      "g3"
+    ],
+    "ply": 7,
+    "focus": "Distinguish reduced legal recapture options from material loss in the existing central-tension fixture."
+  },
+  {
+    "id": "defend-scholars-mate",
+    "category": "defense",
+    "moves": [
+      "e4",
+      "e5",
+      "Qh5",
+      "Nc6",
+      "Bc4",
+      "Nf6",
+      "Qxf7#"
+    ],
+    "ply": 6,
+    "focus": "Explain the mating threat and verify a defensive alternative from the earlier position."
+  },
+  {
+    "id": "stalemate-conversion",
+    "category": "endgame",
+    "initialFen": "7k/5K2/8/6Q1/8/8/8/8 w - - 0 1",
+    "moves": [
+      "Qg6"
+    ],
+    "ply": 1,
+    "focus": "Recognize actual stalemate rather than a claimable draw; avoid invented captures."
+  },
+  {
+    "id": "promotion",
+    "category": "endgame",
+    "initialFen": "7k/P7/8/8/8/8/8/K7 w - - 0 1",
+    "moves": [
+      "a8=Q+"
+    ],
+    "ply": 1,
+    "focus": "Explain promotion and check without assuming the game is over."
+  }
+]

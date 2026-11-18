@@ -9,6 +9,7 @@ import { InPageReviewController } from './in-page-review';
 import type { NativeReviewSnapshot } from './site-review-types';
 import type { ReviewEvent } from './review-types';
 import { normalizedFen } from './chess';
+import { resolveReviewPly } from './site-review';
 import { buildBoardContext } from './board-context';
 import { buildExplanationFacts } from './explanation-facts';
 import { renderExplanation } from './coach-prompt';
@@ -134,6 +135,7 @@ async function update(force = false) {
 chrome.runtime.onMessage.addListener((payload: unknown, sender) => {
     if (!isBackgroundSender(sender) || !isContentMessage(payload)) return;
     const message = payload;
+    if (message.type === 'REVIEW_CONTROL') { review.control(message); return; }
     if (message.type === 'REVIEW_LOADED') {
         closed = false; invalidate('Starting review…'); review.start(message.session); void update(true); return;
     }
@@ -143,7 +145,7 @@ chrome.runtime.onMessage.addListener((payload: unknown, sender) => {
         // facts/text; otherwise a fast cached response can finish before its text.
         reviewEvents = reviewEvents.then(async () => {
             if (closed || !review.active) return;
-            if (event.type === 'REVIEW_RESULT' || event.type === 'REVIEW_TEXT' || event.type === 'REVIEW_EXPLANATION_STATE') {
+            if (event.type === 'REVIEW_PRACTICE_RESULT' || event.type === 'REVIEW_RESULT' || event.type === 'REVIEW_TEXT' || event.type === 'REVIEW_EXPLANATION_STATE') {
                 const expectedUrl = location.href;
                 const response = await send({ type: 'NATIVE_REVIEW_REQUEST' });
                 if (closed || location.href !== expectedUrl || !review.active) return;
@@ -212,10 +214,24 @@ setInterval(() => {
     }
 }, 750);
 window.addEventListener('popstate', schedule);
-window.addEventListener('pagehide', () => { review.stop(); placement.destroy(); overlay.destroy(); void send({ type: 'CANCEL' }); });
+window.addEventListener('pagehide', () => { review.stop(true); placement.destroy(); overlay.destroy(); void send({ type: 'CANCEL' }); });
 // pushState does not emit popstate. A slow URL-only check covers SPA navigation.
 let url = location.href;
 setInterval(() => { if (url !== location.href) { url = location.href; schedule(); } }, 750);
 performance.mark('kibitz:content-init:end');
 performance.measure('kibitz:content-init', 'kibitz:content-init:start', 'kibitz:content-init:end');
-void update();
+void (async () => {
+    // Restore only a session explicitly started earlier in this tab, and verify
+    // it against the current native board before any analysis or overlay.
+    try {
+        const response = await send({type:'GET_REVIEW_STATE'});
+        if (response?.state?.active !== false && isReviewSession(response?.state?.session)) {
+            const native = normalizeSnapshot((await send({type:'NATIVE_REVIEW_REQUEST'}))?.snapshot);
+            if (native && resolveReviewPly(response.state.session,native) !== undefined && !closed) {
+                if (response.state.session.selectedPly!==resolveReviewPly(response.state.session,native)) await send({type:'NATIVE_REVIEW_NAVIGATE',direction:'select',ply:response.state.session.selectedPly});
+                review.start(response.state.session);
+            }
+        }
+    } catch { /* Ordinary study remains available without saved state. */ }
+    await update();
+})();

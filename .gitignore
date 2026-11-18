@@ -9,3 +9,6 @@ dist/
 
 # Planning and generated documentation
 docs/
+
+# Local release archives
+releases/

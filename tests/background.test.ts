@@ -89,6 +89,12 @@ function connectPanel() {
     onConnect({ name: 'panel', sender: panel, postMessage, onDisconnect: { addListener: vi.fn() } });
     return postMessage;
 }
+it('routes Test AI through offscreen using saved private settings without starting engine analysis',async()=>{
+    await send({type:'TEST_AI'},panel);
+    expect(runtimeSend).toHaveBeenCalledWith(expect.objectContaining({target:'offscreen',type:'EXPLANATION_TEST',settings:expect.objectContaining({keys:expect.any(Object)})}));
+    expect(runtimeSend.mock.calls.some(([m])=>m.type==='ENGINE_START'||m.type==='REVIEW_START')).toBe(false);
+    expect(await send({type:'TEST_AI'},page)).toMatchObject({error:'Unauthorized request.'});
+});
 it('routes the request to offscreen with the correct command and private settings', async () => {
     await send(request('one'));
     await vi.waitFor(() => expect(runtimeSend).toHaveBeenCalledWith(expect.objectContaining({ type: 'ENGINE_START', target: 'offscreen', requestId: 'one', tabId: 12 })));
@@ -150,6 +156,20 @@ it('routes review directly to its source page without a panel and pauses hidden 
     onActivated();
     await vi.waitFor(() => expect(session.activeAnalysis).toBeUndefined());
     expect(tabSend).toHaveBeenCalledWith(12, expect.objectContaining({ type: 'REVIEW_ERROR', text: expect.stringContaining('paused') }));
+});
+
+it('serializes review restoration, validates the source page, and keeps deleted active history deleted',async()=>{
+    activeUrl='https://lichess.org/abcdefgh';const source={...page,url:activeUrl};
+    const saved=sessionFromPgn('[Result "1-0"]\n\n1. e4 e5 1-0',{url:activeUrl,gameId:'abcdefgh',tabId:12});session['siteReview:12']=saved;
+    const [first,second]=await Promise.all([send({type:'GET_REVIEW_STATE'},source),send({type:'GET_REVIEW_STATE'},panel)]);
+    expect(first.state.session.id).toBe(saved.id);expect(second.state.session.id).toBe(saved.id);
+    expect(await send({type:'REVIEW_PRACTICE_RECORD',sessionId:saved.id,ply:1,outcome:'solved'},source)).toEqual({ok:true});
+    await vi.waitFor(()=>expect((local.reviewLibraryV2 as unknown[])?.length).toBe(1));
+    await send({type:'DELETE_LEARNING_HISTORY'},panel);
+    await send({type:'REVIEW_VIEW',sessionId:saved.id,ply:1,running:false},source);
+    await new Promise(resolve=>setTimeout(resolve,450));
+    expect((await send({type:'GET_LEARNING_HISTORY'},panel)).history).toEqual([]);
+    activeUrl='https://lichess.org/ijklmnop';expect((await send({type:'GET_REVIEW_STATE'},panel)).state).toBeUndefined();
 });
 it('rejects a different move or session and allows whole-game jobs without navigating the board', async () => {
     activeUrl = 'https://lichess.org/abcdefgh'; const source = { ...page, url: activeUrl };

@@ -13,7 +13,7 @@ const move = (color: 'w' | 'b' = 'w'): ReviewMove => ({ ply: color === 'w' ? 1 :
 const mate = (winner: 'w' | 'b'): Evaluation => ({ ...cp(winner === 'w' ? 10000 : -10000), engineScore: { kind: 'mate', winner, moves: 3 } });
 
 describe('review feedback', () => {
-    it.each([[20, 'Excellent'], [50, 'Good'], [100, 'Inaccuracy'], [200, 'Mistake'], [201, 'Blunder']])('grades a %i centipawn loss as %s', (loss, label) => {
+    it.each([[20, 'Excellent'], [50, 'Good'], [100, 'Inaccuracy'], [200, 'Mistake'], [201, 'Mistake'], [300, 'Blunder']])('grades a %i centipawn loss as %s', (loss, label) => {
         expect(moveFeedback(move(), cp(100), cp(100 - loss))).toMatchObject({ label, lossCp: loss });
         expect(moveFeedback(move('b'), cp(-100), cp(-100 + loss))).toMatchObject({ label, lossCp: loss });
     });
@@ -69,13 +69,14 @@ describe('review positions and history', () => {
         await analyzer.analyze(request(['g1f3', 'g8f6', 'f3g1', 'f6g8'], 4), signal);
         expect(engine.analyze).toHaveBeenCalledTimes(5);
     });
-    it('recognizes repetition and checkmate without an engine search for terminal positions', async () => {
+    it('continues analyzing claimable repetition but recognizes checkmate as terminal', async () => {
         const engine = { analyze: vi.fn(async () => cp(0)) };
         const analyzer = new ReviewAnalyzer(engine);
         const cycle = ['g1f3', 'g8f6', 'f3g1', 'f6g8'];
         const draw = await analyzer.analyze(request([...cycle, ...cycle]), new AbortController().signal);
-        expect(draw.after).toMatchObject({ terminal: 'Threefold repetition', engineScore: { kind: 'terminal' } });
-        expect(engine.analyze).toHaveBeenCalledOnce();
+        expect(draw.after.terminal).toBeUndefined();
+        expect(draw.after.engineScore?.kind).toBe('cp');
+        expect(engine.analyze).toHaveBeenCalledTimes(2);
         const checkmate = await analyzer.analyze(request(['f2f3', 'e7e5', 'g2g4', 'd8h4']), new AbortController().signal);
         expect(checkmate.after).toMatchObject({ terminal: 'Checkmate', engineScore: { kind: 'terminal', winner: 'b' }, whiteScore: -100 });
         expect(checkmate.feedback?.label).toBe('Checkmate');

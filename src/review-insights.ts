@@ -27,6 +27,10 @@ export interface ReviewInsight {
 export function reviewInsight(move: ReviewMove, feedback: MoveFeedback, before: Evaluation | undefined, after: Evaluation): ReviewInsight {
     const board = new Chess(move.beforeFen), played = playUci(board, move.uci);
     if (board.fen() !== move.afterFen) throw new Error('Review position mismatch.');
+    if (feedback.provisional || feedback.label === 'Review') return {
+        summary: 'The engine searches disagree about this move. The assessment is provisional; a deeper comparison is needed.',
+        playedDescription: `${colorName(played.color)} moved the ${pieceNames[played.piece]} from ${played.from.toUpperCase()} to ${played.to.toUpperCase()}.`, cues: []
+    };
     const side = colorName(played.color), problem = reviewProblem(feedback.label);
     const summary = feedback.label === 'Checkmate' ? `${side} delivered checkmate.`
         : !problem ? (played.captured ? `${side} captured ${played.isEnPassant() ? `a pawn en passant, moving to ${played.to.toUpperCase()}` : `${pieceNames[played.captured]} on ${played.to.toUpperCase()}`} without a major loss in this search.`

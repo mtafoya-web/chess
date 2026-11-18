@@ -1,6 +1,7 @@
+import {browserExecutable} from './browser-runtime.mjs';
 // Run after npm run build. Uses an isolated, temporary Chrome profile.
 import { spawn } from 'node:child_process';
-import { mkdtemp, writeFile, readFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { resolve, join } from 'node:path';
 import assert from 'node:assert/strict';
@@ -9,7 +10,8 @@ import { Chess } from 'chess.js';
 const wait = ms => new Promise(r => setTimeout(r, ms));
 const profile = await mkdtemp(join(tmpdir(), 'kibitz-browser-'));
 const port = 19443;
-const browser = spawn(process.env.CHROME_PATH ?? 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe', [
+const artifactDirectory=resolve('screenshots/review-1.1');await mkdir(artifactDirectory,{recursive:true});
+const browser = spawn(browserExecutable(), [
   '--headless=new', '--disable-gpu', '--no-first-run', '--no-default-browser-check',
   '--disable-features=DisableLoadExtensionCommandLineSwitch',
   `--user-data-dir=${profile}`, `--remote-debugging-port=${port}`,
@@ -28,20 +30,25 @@ async function connect(url) {
   await new Promise((resolve, reject) => { socket.onopen = resolve; socket.onerror = reject; });
   socket.onmessage = ({ data }) => {
     const event = JSON.parse(data); const task = pending.get(event.id);
-    if (task) { pending.delete(event.id); event.error ? task.reject(new Error(event.error.message)) : task.resolve(event.result); }
+    if (task) { pending.delete(event.id); clearTimeout(task.timer); event.error ? task.reject(new Error(event.error.message)) : task.resolve(event.result); }
     else if (listeners.has(event.method)) listeners.get(event.method)(event.params);
   };
   const client = {
     on(method, callback) { listeners.set(method, callback); },
     send(method, params = {}) {
-      return new Promise((resolve, reject) => { const key = ++id; pending.set(key, { resolve, reject }); socket.send(JSON.stringify({ id: key, method, params })); });
+      return new Promise((resolve, reject) => {
+        const key = ++id;
+        const timer = setTimeout(() => { pending.delete(key); reject(new Error(`Browser command timed out: ${method}`)); }, 30000);
+        pending.set(key, { resolve, reject, timer });
+        socket.send(JSON.stringify({ id: key, method, params }));
+      });
     },
     async evaluate(expression) {
       const response = await this.send('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true });
       if (response.exceptionDetails) throw new Error(response.exceptionDetails.text + ': ' + response.exceptionDetails.exception?.description);
       return response.result.value;
     },
-    close() { for (const task of pending.values()) task.reject(new Error('Browser connection closed')); pending.clear(); socket.close(); },
+    close() { for (const task of pending.values()) { clearTimeout(task.timer); task.reject(new Error('Browser connection closed')); } pending.clear(); socket.close(); },
   };
   clients.push(client); return client;
 }
@@ -66,7 +73,7 @@ try {
   const offscreen = await connect(offscreenTarget.webSocketDebuggerUrl);
   await offscreen.send('Runtime.enable');
   await offscreen.evaluate(`globalThis.__senders=[];chrome.runtime.onMessage.addListener((m,s)=>{globalThis.__senders.push({type:m.type,id:s.id,url:s.url,tab:!!s.tab,fen:m.fen,manual:m.manual})});true`);
-  await offscreen.evaluate(`globalThis.__reviewEvents=[];const originalSend=chrome.runtime.sendMessage.bind(chrome.runtime);chrome.runtime.sendMessage=(message,...args)=>{if(message.event?.type?.startsWith('REVIEW_')){const {type,requestId,ply,text}=message.event;globalThis.__reviewEvents.push({type,requestId,ply,text});}return originalSend(message,...args)};true`);
+  await offscreen.evaluate(`globalThis.__reviewEvents=[];const originalSend=chrome.runtime.sendMessage.bind(chrome.runtime);chrome.runtime.sendMessage=(message,...args)=>{if(message.event?.type?.startsWith('REVIEW_')){const {type,requestId,ply,text,accepted,uncertain,feedback}=message.event;globalThis.__reviewEvents.push({type,requestId,ply,text,accepted,uncertain,feedback});}return originalSend(message,...args)};true`);
   // CDP Fetch interception does not reliably pause chrome-extension:// fetches.
   // Wrap only the packaged data request inside this isolated test context instead.
   await offscreen.evaluate(`globalThis.__openingFetchCount=0;const originalFetch=globalThis.fetch.bind(globalThis);globalThis.fetch=async(input,options)=>{const url=typeof input==='string'?input:input.url;if(url===chrome.runtime.getURL('data/openings.json')){globalThis.__openingFetchCount++;if(${failOpenings})return new Response('',{status:503});await new Promise(resolve=>setTimeout(resolve,750));}return originalFetch(input,options)};true`);
@@ -139,7 +146,7 @@ try {
       *{box-sizing:border-box}body{margin:0;padding:12px;font:16px system-ui;background:#f3f3ed;color:#242722}main{display:grid;grid-template-columns:minmax(0,640px) minmax(260px,1fr);gap:12px;max-width:1200px;margin:auto}.board-wrapper,.analyse__board{min-width:0}.board{display:block;position:relative;width:100%;aspect-ratio:1;background:conic-gradient(#769453 25%,#eeeccf 0 50%,#769453 0 75%,#eeeccf 0);background-size:25% 25%}.piece,piece{position:absolute;width:12.5%;height:12.5%;display:flex;align-items:center;justify-content:center;font-size:clamp(16px,5vw,46px);line-height:1;pointer-events:none}.site-controls{display:flex;align-items:center;gap:8px;min-height:48px;flex-wrap:wrap}.site-controls button,.move-list button{min-height:44px}aside{min-width:0;grid-column:2;grid-row:1 / span 2}.site-controls{grid-column:1;grid-row:2}.native-chat{padding:12px;background:#e3e7db;min-height:100px}button{font:inherit}.move-list{display:flex;gap:6px;flex-wrap:wrap}.node.active,move.active{outline:2px solid #456922}footer{max-width:1200px;margin:12px auto;padding:12px;background:#e0e6d9}body.dark{background:#242722;color:#eee}body.dark .native-chat,body.dark footer{background:#343c2d}@media(max-width:999px){main{grid-template-columns:minmax(0,1fr);grid-template-rows:auto 48px auto}.site-controls{height:48px}aside{grid-column:1;grid-row:auto}.native-chat{min-height:100px}}
       input{max-width:100%;min-width:0}
     </style></head><body><header class="game__meta"><span class="result" data-result="0-1">0-1</span></header>
-    <main class="${lichess ? 'round__app' : 'board-layout-main'}"><div class="${lichess ? 'analyse__board' : 'board-wrapper'}"><${boardTag} class="board"></${boardTag}></div><div class="site-controls board-controls" data-native-control><button id="native-prev">Previous</button><button id="native-next">Next</button><button id="native-flip">Flip</button><span class="clock">Finished</span></div><aside class="${lichess ? 'analyse__tools' : 'sidebar-component'}"><div class="move-list ${lichess ? 'analyse__moves' : ''}" data-native-control></div><div class="evaluation-bar" data-native-control style="min-height:24px">Native evaluation controls</div><div class="native-chat" data-native-control>Game notes and chat <input placeholder="Study notes"></div></aside></main>
+    <main class="${lichess ? 'round__app' : 'board-layout-main'}"><div class="${lichess ? 'analyse__board' : 'board-wrapper'}"><${boardTag} class="board"></${boardTag}></div><div class="site-controls board-controls" data-native-control><button id="native-first" data-action="first">First</button><button id="native-prev">Previous</button><button id="native-next">Next</button><button id="native-flip">Flip</button><span class="clock">Finished</span></div><aside class="${lichess ? 'analyse__tools' : 'sidebar-component'}"><div class="move-list ${lichess ? 'analyse__moves' : ''}" data-native-control></div><div class="evaluation-bar" data-native-control style="min-height:24px">Native evaluation controls</div><div class="native-chat" data-native-control>Game notes and chat <input placeholder="Study notes"></div></aside></main>
     <footer data-native-control><button>Site navigation</button></footer><script type="application/x-chess-pgn">${pgn}</script>
     <script>
       const positions=${JSON.stringify(positions)},moves=${JSON.stringify(moves)},pieces=${JSON.stringify(allPieces)},pgn=${JSON.stringify(pgn)},lichess=${lichess};
@@ -149,7 +156,7 @@ try {
       function select(ply){selected=Math.min(moves.length,Math.max(0,ply));board.dataset.fen=positions[selected];board.classList.toggle('flipped',black);wrapper.classList.toggle('orientation-black',black);board.replaceChildren();for(const p of pieces[selected]){const el=document.createElement(lichess?'piece':'div'),file=p.square.charCodeAt(0)-97,rank=Number(p.square[1]);el.className=lichess?(p.color==='w'?'white':'black')+' '+names[p.type]:'piece '+p.color+p.type+' square-'+(file+1)+rank;el.style.left=((black?7-file:file)*12.5)+'%';el.style.top=((black?rank-1:8-rank)*12.5)+'%';el.textContent=glyphs[p.color+p.type];board.append(el)}for(const el of list.children){el.classList.toggle('active',Number(el.dataset.ply)===selected);el.setAttribute('aria-current',String(Number(el.dataset.ply)===selected))}if(lichess){site.analysis.node={fen:positions[selected],ply:selected};site.analysis.path=String(selected);site.analysis.nodeList=positions.slice(0,selected+1).map((fen,ply)=>({fen,ply,san:ply?moves[ply-1].san:undefined}))}}
       window.site={analysis:{tree:{root:{fen:positions[0],ply:0}},node:{},path:''}};
       if(!lichess)board.game={getFEN:()=>positions[selected],getSelectedNode:()=>({ply:selected}),getHistorySANs:()=>moves.slice(0,selected).map(m=>m.san),getPGN:()=>pgn,getHeaders:()=>({Result:'0-1',Link:location.href})};
-      document.querySelector('#native-prev').onclick=()=>select(selected-1);document.querySelector('#native-next').onclick=()=>select(selected+1);document.querySelector('#native-flip').onclick=()=>{black=!black;select(selected)};window.selectFixture=select;select(1);
+      document.querySelector('#native-first').onclick=()=>select(0);document.querySelector('#native-prev').onclick=()=>select(selected-1);document.querySelector('#native-next').onclick=()=>select(selected+1);document.querySelector('#native-flip').onclick=()=>{black=!black;select(selected)};window.selectFixture=select;select(1);
     </script></body></html>`;
   }
   for (const lichess of [false, true]) {
@@ -208,7 +215,7 @@ try {
     await until(() => page.evaluate(cardValue(`root?.querySelector('.review-ai-text').textContent.includes('Explanation by') && !!root?.querySelector('.explanation').textContent && root?.querySelector('.status').textContent.includes('Explained by')`)), 'automatic in-page grounded AI explanation after native navigation', 30000);
     await page.evaluate(`document.querySelector('#kibitz-card').shadowRoot.querySelector('[data-sweep]').click();true`);
     try {
-      await until(() => page.evaluate(cardValue('root?.querySelector(".review-progress").textContent.startsWith("4 of 4")')), 'whole-game review does not navigate the native board', 30000);
+      await until(() => page.evaluate(cardValue('root?.querySelector(".review-progress").textContent.includes("4 of 4")')), 'whole-game review does not navigate the native board', 60000);
     } catch (error) {
       console.error('Fixture review state:', await page.evaluate(cardValue('({progress:root.querySelector(".review-progress").textContent,status:root.querySelector(".status").textContent})')));
       console.error('Fixture review event sequence:', await offscreen.evaluate('globalThis.__reviewEvents'));
@@ -217,9 +224,12 @@ try {
     assert.ok(await page.evaluate('document.querySelector(".node.active").dataset.ply === "2"'));
     await page.evaluate(`(()=>{const root=document.querySelector('#kibitz-card').shadowRoot;root.querySelector('.review-issues').open=true;root.querySelector('[data-issue-ply="3"]').click();return true})()`);
     await until(() => page.evaluate(cardValue('root.querySelector("h2").textContent.startsWith("Pawn to G4")')), 'problem list selects the native played move', 30000);
+    await until(()=>page.evaluate(cardValue('!root.querySelector("[data-action=practice]").hidden && root.querySelector("h2").textContent.startsWith("Pawn to G4")')),'confirmed problem ready',30000);
     assert.equal(await page.evaluate('document.querySelector(".node.active").dataset.ply'), '3');
     assert.equal(await page.evaluate('document.querySelector("#kibitz-overlay [data-marker] text").textContent'), '??');
     assert.equal(await page.evaluate('document.querySelectorAll("#kibitz-overlay [data-review-cue=origin],#kibitz-overlay [data-review-cue=destination]").length'), 2);
+    assert.equal(await page.evaluate('document.querySelectorAll("#kibitz-overlay [data-review-cue=consequence]").length'), 0, 'Consequence is revealed on request');
+    await page.evaluate(cardValue('root.querySelector("[data-action=why]").click()'));
     assert.equal(await page.evaluate('document.querySelectorAll("#kibitz-overlay [data-review-cue=consequence]").length'), 1);
     assert.ok(await page.evaluate(cardValue('root.querySelector(".lines").textContent.includes("Better alternative")')));
     assert.ok(await page.evaluate(cardValue('root.querySelector(".lines").textContent.includes("One searched continuation") && root.querySelector(".lines").textContent.includes("2... Qh4#")')), 'Review exposes its legal supporting line separately from the better-move branch');
@@ -229,6 +239,65 @@ try {
     assert.equal(await page.evaluate(cardValue(`root.querySelector('.cue-help').open`)), false, 'Full symbol help stays collapsed');
     const cuesShot = await page.send('Page.captureScreenshot', { format: 'png' });
     await writeFile(join(profile, lichess ? 'lichess-review-cues.png' : 'chesscom-review-cues.png'), Buffer.from(cuesShot.data, 'base64'));
+
+    // Exercise the new overview, teaching reveal, practice and persistence on the real extension pipeline.
+    await blank.send('Page.navigate',{url:`${origin}/sidepanel.html`});
+    await until(()=>blank.evaluate('document.querySelector("#review-overview")?.textContent.includes("Kibitz accuracy")'),'game overview',30000);
+    assert.ok(await blank.evaluate('document.querySelector("#settings-page").hidden'),'Provider setup is outside the default review');
+    const current=await blank.evaluate('chrome.runtime.sendMessage({type:"GET_REVIEW_STATE"})');
+    const preferred=current.state.assessments.find(a=>a.ply===3).before.candidates[0].san;
+    assert.equal(current.state.assessments.filter(a=>a.ply>0).length,4);
+    await page.evaluate(cardValue('root.querySelector("[data-action=better]").click()'));
+    await until(()=>page.evaluate(cardValue('root.querySelector("h2").textContent.includes("Better alternative")')),'better alternative on its own root');
+    assert.equal(await page.evaluate('document.querySelector(".node.active").dataset.ply'),'2');
+    assert.equal(await page.evaluate('document.querySelectorAll("#kibitz-overlay [data-candidate-ranks]").length'),1);
+    await page.evaluate(cardValue('root.querySelector("[data-action=better]").click()'));
+    await until(()=>page.evaluate(cardValue('root.querySelector("h2").textContent.startsWith("Pawn to G4")')),'return from alternative',30000);
+    await page.evaluate(cardValue('root.querySelector("[data-action=practice]").click()'));
+    await until(()=>page.evaluate('document.querySelector("#kibitz-card").hasAttribute("data-practice") && document.querySelector(".node.active").dataset.ply==="2"'),'practice root');
+    assert.equal(await page.evaluate(cardValue('getComputedStyle(root.querySelector(".recommendation")).display')),'none','Practice hides assessments and evaluations');
+    assert.equal(await page.evaluate('document.querySelectorAll("#kibitz-overlay path,#kibitz-overlay [data-marker]").length'),0,'Practice has no solution overlays');
+    await until(()=>blank.evaluate('document.querySelector("#review-overview")?.textContent.includes("Practice in progress")'),'overview hides practice answers');
+    await page.evaluate('document.querySelector("#kibitz-card").scrollIntoView({block:"center"});true');
+    const practiceShot=await page.send('Page.captureScreenshot',{format:'png'});await writeFile(join(artifactDirectory,lichess?'lichess-practice.png':'chesscom-practice.png'),Buffer.from(practiceShot.data,'base64'));
+    await page.evaluate(cardValue(`(()=>{root.querySelector('[data-san]').value=${JSON.stringify(preferred)};root.querySelector('[data-attempt]').requestSubmit();return true;})()`));
+    try { await until(()=>page.evaluate(cardValue('root.querySelector(".practice-result").textContent.includes("Good solution")')),'legal alternative accepted',40000); }
+    catch(error){console.error('Practice state:',await page.evaluate(cardValue('({message:root.querySelector(".practice-result").textContent,status:root.querySelector(".status").textContent,selected:document.querySelector(".node.active")?.dataset.ply,practice:document.querySelector("#kibitz-card").hasAttribute("data-practice")})')));console.error('Practice events:',await offscreen.evaluate('globalThis.__reviewEvents.slice(-15)'));throw error;}
+    const practiced=await blank.evaluate('chrome.runtime.sendMessage({type:"GET_REVIEW_STATE"})');
+    assert.ok(practiced.state.attempts.some(a=>a.ply===3&&a.outcome==='solved'));
+    await page.evaluate(cardValue('root.querySelector("[data-action=cancel]").click()'));
+    await until(()=>page.evaluate('!document.querySelector("#kibitz-card").hasAttribute("data-practice") && document.querySelector(".node.active").dataset.ply==="3"'),'return to recorded game');
+    await until(()=>blank.evaluate('document.querySelector("#review-overview")?.textContent.includes("Kibitz accuracy")'),'overview after practice');
+    const overviewStyle=await blank.evaluate('document.documentElement.getAttribute("style")');
+    // A side panel leaves the website tab active. Keep that same relationship
+    // when capturing this test tab, so polling still targets the reviewed game.
+    await page.send('Page.bringToFront');
+    await blank.send('Emulation.setFocusEmulationEnabled',{enabled:true});
+    for(const scheme of ['light','dark'])for(const width of [1280,768,375]){
+      await blank.send('Emulation.setEmulatedMedia',{features:[{name:'prefers-color-scheme',value:scheme}]});
+      await blank.evaluate(`document.documentElement.removeAttribute('style');document.documentElement.style.colorScheme=${JSON.stringify(scheme)};true`);
+      await blank.send('Emulation.setDeviceMetricsOverride',{width,height:900,deviceScaleFactor:1,mobile:false});
+      assert.ok(await blank.evaluate('document.querySelector("#review-overview")?.textContent.includes("Kibitz accuracy")'),'Screenshot contains the reviewed game');
+      assert.equal(await blank.evaluate('document.documentElement.scrollWidth>innerWidth'),false,'Overview reflows');
+      const screenshot=await blank.send('Page.captureScreenshot',{format:'png',captureBeyondViewport:true});await writeFile(join(artifactDirectory,`${lichess?'lichess':'chesscom'}-overview-${scheme}-${width}.png`),Buffer.from(screenshot.data,'base64'));
+    }
+    await blank.send('Emulation.setFocusEmulationEnabled',{enabled:false});
+    await page.send('Page.bringToFront');
+    await blank.evaluate(`document.documentElement.setAttribute('style',${JSON.stringify(overviewStyle??'')});true`);
+    await blank.send('Emulation.setEmulatedMedia',{features:[]});
+    await page.send('Page.reload');
+    await until(()=>page.evaluate(cardValue('root?.querySelector(".review-progress").textContent.includes("4 of 4")')),'review resumes after refresh',30000);
+    await until(()=>page.evaluate(cardValue('root.querySelector("h2").textContent.startsWith("Pawn to G4")')),'saved native selection restored',30000);
+    await page.evaluate('window.selectFixture(3);true');
+    await until(()=>page.evaluate(cardValue('root.querySelector("h2").textContent.startsWith("Pawn to G4")')),'restored game navigation',30000);
+    await blank.evaluate('document.querySelector("[data-tab=lessons]").click();true');
+    await until(()=>blank.evaluate('document.querySelector("#lesson-history")?.textContent.includes("independent solutions")'),'saved lesson history');
+    await blank.evaluate('document.querySelector("#clear-history").click();document.querySelector("#clear-history").click();true');
+    await until(()=>blank.evaluate('document.querySelector("#history-status").textContent.includes("cleared")'),'history deletion');
+    await wait(700);
+    assert.equal((await blank.evaluate('chrome.runtime.sendMessage({type:"GET_LEARNING_HISTORY"})')).history.length,0,'Deleted history stays deleted');
+    await blank.evaluate('document.querySelector("[data-tab=review]").click();true');
+    console.log(`PASS: ${lichess?'Lichess':'Chess.com'} overview, on-demand alternative, hidden-answer practice, real engine acceptance, resume and deletion`);
 
     const checkPlacement = async (label) => {
       await wait(450);

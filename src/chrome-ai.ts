@@ -1,7 +1,9 @@
+import { ProviderFailure } from './provider-failures';
+import { EXPLANATION_SCHEMA } from './explanation-schema';
 // Kept behind feature detection so older Chrome versions retain local-engine support.
 export type Availability = 'unavailable' | 'downloadable' | 'downloading' | 'available';
 interface Session {
-    promptStreaming(prompt: string, options: { signal: AbortSignal }): ReadableStream<string>;
+    promptStreaming(prompt: string, options: { signal: AbortSignal; responseConstraint: object; omitResponseConstraintInput: boolean }): ReadableStream<string>;
     destroy(): void;
 }
 interface Options {
@@ -36,12 +38,13 @@ export async function downloadChromeAI(onProgress: (percent: number) => void) {
 }
 export async function explainWithChrome(prompt: string, signal: AbortSignal, onDelta: (text: string) => void) {
     signal.throwIfAborted();
-    if (await chromeAvailability() !== 'available') throw new Error('Chrome AI is not ready. Enable it in Kibitz settings.');
+    const availability = await model()?.availability(options) ?? 'unavailable';
+    if (availability !== 'available') throw new ProviderFailure(availability === 'downloadable' ? 'download-required' : availability === 'downloading' ? 'downloading' : 'not-supported');
     signal.throwIfAborted();
     const session = await model()!.create({ ...options, signal });
     try {
         signal.throwIfAborted();
-        const reader = session.promptStreaming(prompt, { signal }).getReader();
+        const reader = session.promptStreaming(prompt, { signal, responseConstraint:EXPLANATION_SCHEMA, omitResponseConstraintInput:true }).getReader();
         try {
             while (true) {
                 signal.throwIfAborted();

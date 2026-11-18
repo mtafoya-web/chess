@@ -36,6 +36,15 @@ beforeEach(async () => {
     await new Promise(resolve => setTimeout(resolve, 0));
 });
 afterEach(() => { vi.unstubAllGlobals(); document.body.replaceChildren(); });
+it('shows safe provider-specific Test AI results and reenables retry',async()=>{
+    sendMessage.mockResolvedValueOnce({test:{provider:'facts',text:'Verified fallback.',attempts:[{provider:'chrome',reason:'download-required'},{provider:'ollama',reason:'connection'}]}} as never);
+    const button=document.getElementById('test-ai') as HTMLButtonElement;
+    button.click();expect(button.disabled).toBe(true);await new Promise(resolve=>setTimeout(resolve,0));
+    expect(sendMessage).toHaveBeenCalledWith({type:'TEST_AI'});
+    expect(document.getElementById('ai-test-status')!.textContent).toContain('needs its model downloaded');
+    expect(document.getElementById('ai-test-status')!.textContent).toContain('Ollama cannot be reached');
+    expect(button.disabled).toBe(false);
+});
 it('keeps verified manual-position commentary when the AI explanation fails', () => {
     (document.getElementById('fen') as HTMLTextAreaElement).value = DEFAULT_POSITION;
     document.getElementById('manual')!.dispatchEvent(new Event('submit', {bubbles:true,cancelable:true}));

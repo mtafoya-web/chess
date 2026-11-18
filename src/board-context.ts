@@ -55,6 +55,6 @@ export function buildBoardContext(fen: string, history?: BoardHistory): BoardCon
     const fields = expected.split(' ');
     return { schemaVersion: 1, key: JSON.stringify([1, history?.sessionId, initial, history?.moves.slice(0, history.ply) ?? null, expected]), sessionId: history?.sessionId, ply: history?.ply, fen: expected,
         historyCompleteness: history ? initial === DEFAULT_POSITION ? 'standard-start' : 'custom-start' : 'position-only',
-        turn: board.turn(), fullmove: Number(fields[5]), castling: fields[2], enPassant: fields[3], terminal: board.isCheckmate() ? 'Checkmate' : board.isStalemate() ? 'Stalemate' : board.isDraw() ? 'Draw' : undefined,
+        turn: board.turn(), fullmove: Number(fields[5]), castling: fields[2], enPassant: fields[3], terminal: board.isCheckmate() ? 'Checkmate' : board.isStalemate() ? 'Stalemate' : board.isInsufficientMaterial() ? 'Insufficient material' : undefined,
         pieces: [...pieces.values()], inventory, captures, promotions, played };
 }

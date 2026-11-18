@@ -1,3 +1,8 @@
+import { ReviewLibrary, recordAssessment, recordPractice, validPreferences } from './review-library';
+import { DEFAULT_REVIEW_PREFERENCES } from './review-scoring';
+import { reviewFingerprint, type ReviewState } from './review-model';
+import { playUci } from './chess';
+import { Chess } from 'chess.js';
 import { diagnostic } from './diagnostics';
 import { loadExecutionSettings, loadPanelSettings, savePanelSettings } from './settings';
 import { type BackgroundRequest, record, publicTypes, isBackgroundRequest, isAnalysisEvent, contextFor, canSendRequest } from './messages';
@@ -20,6 +25,41 @@ let generation = 0;
 let pendingTabId: number | undefined;
 let active: { requestId: string; tabId: number; manual: boolean; sessionId?: string } | undefined;
 const panels = new Set<chrome.runtime.Port>();
+const library = new ReviewLibrary();
+const reviewStates = new Map<number, ReviewState>();
+const stateLoads = new Map<number, Promise<ReviewState | undefined>>();
+const deletedReviews = new Set<string>();
+const reviewJobs = new Map<string, { tabId: number; sessionId: string; ai: boolean }>();
+const saveTimers = new Map<number, ReturnType<typeof setTimeout>>();
+async function stateFor(tabId: number): Promise<ReviewState | undefined> {
+    const loading = stateLoads.get(tabId);
+    if (loading) return loading;
+    const work = loadState(tabId).finally(() => stateLoads.delete(tabId));
+    stateLoads.set(tabId, work);
+    return work;
+}
+async function loadState(tabId: number): Promise<ReviewState | undefined> {
+    const saved = (await chrome.storage.session.get(`siteReview:${tabId}`))[`siteReview:${tabId}`] as ReviewSession | undefined;
+    if (!saved) return;
+    let state = reviewStates.get(tabId);
+    if (!state || state.session.id !== saved.id) {
+        state = await library.open(saved);
+        const preferences = (await chrome.storage.local.get('reviewPreferencesV2')).reviewPreferencesV2;
+        if (validPreferences(preferences)) state.preferences = preferences;
+        reviewStates.set(tabId, state);
+    }
+    return state;
+}
+function saveReview(tabId: number) {
+    clearTimeout(saveTimers.get(tabId));
+    saveTimers.set(tabId, setTimeout(() => {
+        saveTimers.delete(tabId); const state = reviewStates.get(tabId);
+        if (state && !deletedReviews.has(reviewFingerprint(state.session))) void library.save(state).catch(() => {
+            for (const port of panels) { try { port.postMessage({type:'REVIEW_ERROR',sessionId:state.session.id,requestId:'storage',tabId,manual:false,text:'Review is ready, but history could not be saved. Free storage or clear old reviews.'}); } catch {} }
+        });
+    }, 350));
+}
+
 async function nativeAdvice(tabId: number, fen: string, url?: string) {
     let timer: ReturnType<typeof setTimeout> | undefined;
     try { return await Promise.race([readNativeAdvice(tabId, fen, url), new Promise<undefined>(resolve => { timer = setTimeout(() => resolve(undefined), 500); })]); }
@@ -47,6 +87,7 @@ async function currentTab() { return (await chrome.tabs.query({ active: true, la
 async function cancel(tabId?: number) {
     if (tabId !== undefined && active?.tabId !== tabId && pendingTabId !== tabId) return;
     if (active?.sessionId) broadcast({ type: 'REVIEW_ERROR', requestId: active.requestId, sessionId: active.sessionId, tabId: active.tabId, text: 'Review paused. Select a move or restart game analysis to continue.' }, active.manual);
+    reviewJobs.clear();
     generation++; active = undefined; pendingTabId = undefined;
     await chrome.storage.session.remove('activeAnalysis');
     await chrome.runtime.sendMessage({ target: 'offscreen', type: 'ENGINE_CANCEL' }).catch(() => {});
@@ -57,6 +98,7 @@ function broadcast(event: AnalysisEvent | ReviewEvent, manual: boolean) {
 }
 async function start(request: MoveAnalysisRequest, tabId: number, manual: boolean) {
     if (active?.sessionId) broadcast({ type: 'REVIEW_ERROR', requestId: active.requestId, sessionId: active.sessionId, tabId: active.tabId, text: 'Review paused for position analysis. Select a move to resume.' }, active.manual);
+    reviewJobs.clear();
     const turn = ++generation;
     pendingTabId = tabId;
     const fen = normalizedFen(request.fen);
@@ -91,6 +133,8 @@ async function captureGame(tab: chrome.tabs.Tab | undefined) {
     const fresh = confirmed[0]?.result;
     if (after.url !== identity || !fresh?.completed || fresh.gameId !== snapshot.gameId || fresh.url !== identity || (fresh.result && snapshot.result && fresh.result !== snapshot.result)) throw new SafeRequestError('The selected game changed. Open it and try again.');
     const session = captureSession(snapshot);
+    deletedReviews.delete(reviewFingerprint(session));
+    await library.allow(session);
     session.source = { ...session.source!, tabId: tab.id };
     await chrome.storage.session.set({ [`siteReview:${tab.id}`]: session });
     return session;
@@ -102,9 +146,13 @@ async function startReview(request: ReviewRequest, tabId: number, turn = ++gener
     sessionFromMoves(request.moves, request.initialFen);
     await ensureOffscreen();
     if (turn !== generation) return;
-    await chrome.runtime.sendMessage({ target: 'offscreen', type: 'ENGINE_CANCEL' });
+    if (!request.background) { reviewJobs.clear(); await chrome.runtime.sendMessage({ target: 'offscreen', type: 'ENGINE_CANCEL' }); }
     const settings = await loadExecutionSettings();
     if (turn !== generation) return;
+    const reviewState = await stateFor(tabId);
+    if (turn !== generation) return;
+    request = {...request,level:reviewState?.preferences.level??'beginner'};
+    reviewJobs.set(request.requestId, { tabId, sessionId: request.sessionId, ai: request.ai !== false && !request.attempt });
     active = { requestId: request.requestId, tabId, manual: false, sessionId: request.sessionId };
     pendingTabId = undefined;
     await chrome.storage.session.set({ activeAnalysis: active });
@@ -141,14 +189,28 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
         if (!isAnalysisEvent(message.event) || typeof message.manual !== 'boolean') { respond({ error: 'Invalid request.', diagnostic: diagnostic('PROTOCOL_INVALID') }); return; }
         const eventGeneration = generation;
         serial = serial.then(async () => {
-            if (eventGeneration !== generation) return;
+            const incoming = message.event as AnalysisEvent | ReviewEvent;
+            if (eventGeneration !== generation && !reviewJobs.has(incoming.requestId)) return;
             const saved = (await chrome.storage.session.get('activeAnalysis')).activeAnalysis as typeof active;
-            if (eventGeneration !== generation) return;
+            if (eventGeneration !== generation && !reviewJobs.has(incoming.requestId)) return;
             if (!active && saved && typeof saved.requestId === 'string' && typeof saved.tabId === 'number' && typeof saved.manual === 'boolean') active = saved;
             const event = message.event as AnalysisEvent | ReviewEvent;
-            if (active?.requestId === event.requestId && active.tabId === event.tabId && active.manual === message.manual && (!('sessionId' in event) || event.sessionId === active.sessionId)) {
-                broadcast(event, active.manual);
-                if (active.manual && !active.sessionId && (event.type === 'ERROR' || event.type === 'ENGINE_RESULT' && event.result.terminal || event.type === 'EXPLANATION_STATE' && event.state !== 'pending')) {
+            const reviewJob = reviewJobs.get(event.requestId);
+            const authorizedReview = 'sessionId' in event && reviewJob?.tabId === event.tabId && reviewJob.sessionId === event.sessionId && message.manual === false;
+            if (authorizedReview || active?.requestId === event.requestId && active.tabId === event.tabId && active.manual === message.manual && (!('sessionId' in event) || event.sessionId === active.sessionId)) {
+                if (event.type === 'REVIEW_RESULT') {
+                    const state = await stateFor(event.tabId);
+                    if (state?.session.id === event.sessionId) { recordAssessment(state, event); saveReview(event.tabId); }
+                }
+                if (event.type === 'REVIEW_OPENING') {
+                    const state = await stateFor(event.tabId);
+                    const assessment = state?.assessments.find(a=>a.ply===event.ply);
+                    if (state?.session.id===event.sessionId && assessment) {assessment.opening=event.opening;state.updatedAt=Date.now();saveReview(event.tabId);}
+                }
+                broadcast(event, authorizedReview ? false : active!.manual);
+                if (event.type === 'REVIEW_EXPLANATION_STATE' && event.state !== 'pending' || event.type === 'REVIEW_ERROR' || event.type === 'REVIEW_PRACTICE_RESULT') reviewJobs.delete(event.requestId);
+                if (event.type === 'REVIEW_ENGINE_COMPLETE' && reviewJob && !reviewJob.ai) reviewJobs.delete(event.requestId);
+                if (active?.manual && !active.sessionId && (event.type === 'ERROR' || event.type === 'ENGINE_RESULT' && event.result.terminal || event.type === 'EXPLANATION_STATE' && event.state !== 'pending')) {
                     active = undefined; await chrome.storage.session.remove('activeAnalysis');
                 }
             }
@@ -162,7 +224,51 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
     const run = async () => {
         const tab = await currentTab();
         if (!panel && tab?.id !== sender.tab?.id) return { error: 'Unauthorized request.' };
+        if (request.type === 'GET_REVIEW_PREFERENCES') return {preferences:(await chrome.storage.local.get('reviewPreferencesV2')).reviewPreferencesV2??DEFAULT_REVIEW_PREFERENCES};
+        if (request.type === 'SET_REVIEW_PREFERENCES') {
+            await chrome.storage.local.set({reviewPreferencesV2:request.preferences});
+            if(tab?.id){const state=await stateFor(tab.id);if(state){state.preferences=request.preferences;saveReview(tab.id);await chrome.tabs.sendMessage(tab.id,{type:'REVIEW_CONTROL',sessionId:state.session.id,action:'preferences',preferences:request.preferences}).catch(()=>{});}}
+            return {ok:true};
+        }
+        if (request.type === 'DISMISS_LEVEL_SUGGESTION') { await chrome.storage.local.set({levelSuggestionAfter:request.after});return {ok:true}; }
+        if (request.type === 'GET_REVIEW_STATE') {
+            const state = tab?.id ? await stateFor(tab.id) : undefined;
+            if (!state || !tab?.url || !state.session.source) return {};
+            const page = new URL(tab.url), source = new URL(state.session.source.url);
+            return page.origin === source.origin && page.pathname === source.pathname ? {state} : {};
+        }
+        if (request.type === 'GET_LEARNING_HISTORY') return { history: await library.list(), suggestionAfter:(await chrome.storage.local.get('levelSuggestionAfter')).levelSuggestionAfter??0 };
+        if (request.type === 'DELETE_LEARNING_HISTORY') {
+            for (const [id, state] of reviewStates) {
+                const key = reviewFingerprint(state.session);
+                if (!request.key || key === request.key) { deletedReviews.add(key); clearTimeout(saveTimers.get(id)); saveTimers.delete(id); state.attempts = []; }
+            }
+            await library.remove(request.key);
+            return { ok: true };
+        }
+        if (request.type === 'REVIEW_VIEW' || request.type === 'REVIEW_PRACTICE_RECORD' || request.type === 'REVIEW_CONTROL') {
+            if (!tab?.id) return {error:'Open the reviewed game first.'};
+            const state = await stateFor(tab.id);
+            if (!state || state.session.id !== request.sessionId) return {error:'The selected game changed. Start its review again.'};
+            if (request.type === 'REVIEW_VIEW') {
+                if (request.ply > state.session.moves.length) return {error:'Invalid selected move.'};
+                if (request.practicePly !== undefined && request.practicePly > state.session.moves.length) return {error:'Invalid exercise.'};
+                state.session.selectedPly=request.ply;state.running=request.running;state.practicePly=request.practicePly;state.active=request.active??true;saveReview(tab.id);return {ok:true};
+            }
+            if (request.type === 'REVIEW_PRACTICE_RECORD') {
+                if (request.ply > state.session.moves.length) return {error:'Invalid exercise.'};
+                recordPractice(state,{ply:request.ply,outcome:request.outcome,at:Date.now()});saveReview(tab.id);return {ok:true};
+            }
+            if (request.action === 'preferences' && request.preferences) {
+                state.preferences=request.preferences;await chrome.storage.local.set({reviewPreferencesV2:request.preferences});saveReview(tab.id);
+            }
+            await chrome.tabs.sendMessage(tab.id,request);return {ok:true};
+        }
         if (request.type === 'GET_SETTINGS') return loadPanelSettings();
+        if (request.type === 'TEST_AI') {
+            await ensureOffscreen();
+            return chrome.runtime.sendMessage({target:'offscreen',type:'EXPLANATION_TEST',settings:await loadExecutionSettings()});
+        }
         if (request.type === 'SAVE_SETTINGS') return savePanelSettings(request);
         if (request.type === 'GET_OVERLAY_PREFERENCES') {
             const saved = (await chrome.storage.local.get('overlayPreferences')).overlayPreferences as { heatmap?: boolean; arrows?: boolean } | undefined;
@@ -194,6 +300,8 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
                 const native = results[0]?.result;
                 if (!native?.allowed) throw new SafeRequestError('Open a completed game or study board before applying a PGN.');
                 session = sessionFromPgn(request.pgn, { url: tab.url, gameId: native.gameId ?? 'study', tabId: tab.id });
+                deletedReviews.delete(reviewFingerprint(session));
+                await library.allow(session);
                 if (resolveReviewPly(session, native) === undefined) throw new SafeRequestError('This PGN does not match the position selected on the website. Select a matching mainline move and try again.');
                 await chrome.storage.session.set({ [`siteReview:${tab.id}`]: session });
             } else session = await captureGame(tab);
@@ -215,7 +323,14 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
         if (!panel && request.type === 'NATIVE_REVIEW_NAVIGATE' && tab?.id === sender.tab!.id && sender.frameId === 0) {
             if (!['previous', 'next', 'first', 'last', 'select'].includes(request.direction)) throw new SafeRequestError('Invalid native navigation request.');
             const result = await chrome.scripting.executeScript({ target: { tabId: tab.id! }, world: 'MAIN', func: navigateNativeReview, args: [{ direction: request.direction, ply: request.ply, expectedUrl: sender.url! }] });
-            return result[0]?.result ?? { ok: false };
+            if (!result[0]?.result?.ok) return {ok:false};
+            const saved=(await chrome.storage.session.get(`siteReview:${tab.id}`))[`siteReview:${tab.id}`] as ReviewSession | undefined;
+            for (let attempt=0;attempt<6;attempt++) {
+                const snapshot=(await chrome.scripting.executeScript({target:{tabId:tab.id!},world:'MAIN',func:readNativeReview}))[0]?.result;
+                if (saved && snapshot && resolveReviewPly(saved,snapshot) === (request.direction === 'first' ? 0 : request.ply)) return {ok:true};
+                await new Promise(resolve=>setTimeout(resolve,60));
+            }
+            return {ok:false};
         }
         if (!panel && request.type === 'REVIEW_ANALYZE' && tab?.id === sender.tab!.id && sender.frameId === 0) {
             const turn = ++generation;
@@ -229,7 +344,12 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
             if (turn !== generation) return { ok: true };
             if (!native?.allowed || resolveReviewPly(saved, native) === undefined) throw new SafeRequestError('Waiting for a verified position on the website board.');
             // Full-game jobs may evaluate other plies but never navigate the native board.
-            if (!request.background && resolveReviewPly(saved, native) !== request.ply) throw new SafeRequestError('The selected move changed.');
+            if (request.attempt) {
+                const selected=resolveReviewPly(saved,native);
+                if (!request.ply || selected !== request.ply && selected !== request.ply-1) throw new SafeRequestError('Return to the exercise position before checking your answer.');
+                const board=new Chess(saved.moves[request.ply-1].beforeFen);playUci(board,request.attempt);
+            }
+            if (!request.attempt && !request.background && resolveReviewPly(saved, native) !== request.ply) throw new SafeRequestError('The selected move changed.');
             await startReview(request as ReviewRequest, tab.id!, turn);
             return { ok: true };
         }

@@ -98,6 +98,29 @@ it('does not generate AI text for a background sweep even if an ai flag is suppl
     await vi.waitFor(() => expect(events().some(e => e.type === 'REVIEW_RESULT')).toBe(true));
     expect(mocks.explain).not.toHaveBeenCalled();
 });
+
+it('keeps a selected explanation alive while a background job uses the engine',async()=>{
+    let finish!:()=>void;
+    mocks.explain.mockImplementation(async (_settings,_fen,_evaluation,_signal,onDelta)=>{
+        await new Promise<void>(resolve=>{finish=resolve;});onDelta('Selected explanation.');return 'chrome';
+    });
+    deliver(job(true,'selected'));
+    await vi.waitFor(()=>expect(events().some(e=>e.type==='REVIEW_ENGINE_COMPLETE'&&e.requestId==='selected')).toBe(true));
+    await vi.waitFor(()=>expect(finish).toBeTypeOf('function'));
+    const background=job(false,'sweep');background.request.background=true;deliver(background);
+    await vi.waitFor(()=>expect(events().some(e=>e.type==='REVIEW_ENGINE_COMPLETE'&&e.requestId==='sweep')).toBe(true));
+    finish();
+    await vi.waitFor(()=>expect(events().find(e=>e.type==='REVIEW_TEXT'&&e.requestId==='selected')?.text).toBe('Selected explanation.'));
+});
+
+it('evaluates a practice branch without replacing the recorded game assessment',async()=>{
+    const practice=job(false,'practice');practice.request.attempt='d2d4';practice.request.profile='confirm';
+    deliver(practice);
+    await vi.waitFor(()=>expect(events().some(e=>e.type==='REVIEW_PRACTICE_RESULT')).toBe(true));
+    expect(events().find(e=>e.type==='REVIEW_PRACTICE_RESULT')).toMatchObject({attempt:'d2d4',accepted:true,uncertain:false});
+    expect(events().some(e=>e.type==='REVIEW_RESULT')).toBe(false);
+    expect(mocks.explain).not.toHaveBeenCalled();
+});
 it('bounds optional metadata loading before requesting AI and suppresses a canceled explanation', async () => {
     vi.useFakeTimers();
     vi.stubGlobal('fetch', vi.fn(() => new Promise(() => {})));
@@ -140,6 +163,13 @@ it('rejects malformed commands and commands from panel or content contexts', () 
     listener(job(), { id: 'extension', url: 'chrome-extension://extension/sidepanel.html' }, respond);
     expect(respond).toHaveBeenLastCalledWith(expect.objectContaining({ diagnostic: { code: 'PROTOCOL_UNAUTHORIZED' } }));
     expect(mocks.analyze).not.toHaveBeenCalled();
+});
+it('runs Test AI in the explanation worker without starting Stockfish or reusing cache',async()=>{
+    mocks.explain.mockImplementation(async(_settings,_fen,_result,_signal,onDelta)=>{onDelta('Verified sample.');return 'chrome';});
+    const respond=vi.fn();
+    listener({target:'offscreen',type:'EXPLANATION_TEST',settings:{...DEFAULT_SETTINGS,keys:{}}},{id:'extension',url:'chrome-extension://extension/background.js'},respond);
+    await vi.waitFor(()=>expect(respond).toHaveBeenCalledWith({test:{provider:'chrome',text:'Verified sample.',attempts:[]}}));
+    expect(mocks.analyze).not.toHaveBeenCalled();expect(mocks.explain.mock.calls[0][8]).toEqual({cache:false});
 });
 it('does not forward raw engine exception details', async () => {
     mocks.analyze.mockRejectedValue(new Error('private-key-and-position'));

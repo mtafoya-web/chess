@@ -265,6 +265,8 @@ it('makes cue meaning visible, preserves it with AI, and clears it on selection 
     const after = evaluation([{uci:'d8h4',san:'Qh4#',pv:'Qh4#',uciPv:['d8h4'],score:-100}]);
     result(last(), {after,feedback:{label:'Blunder',summary:'Opaque legacy feedback.',lossCp:250}});
     const section = card.reviewCueExplanation;
+    expect(section.hidden).toBe(true);
+    card.learning.element.querySelector<HTMLButtonElement>('[data-action="why"]')!.click();
     expect(section.hidden).toBe(false);
     expect(section.textContent).toContain('White moved the pawn from G2 to G4');
     expect(section.textContent).toContain('Blunder: a major setback');
@@ -281,4 +283,45 @@ it('makes cue meaning visible, preserves it with AI, and clears it on selection 
     update(2);
     expect(section.hidden).toBe(true); expect(section.textContent).toBe('');
     controller.stop(); expect(card.reviewControls.hidden).toBe(true);
+});
+
+it('releases the engine for a sweep while a selected explanation continues', () => {
+    update(1); const selected=last(); result(selected,{},false);
+    card.reviewSweep.click();
+    controller.handle({type:'REVIEW_ENGINE_COMPLETE',sessionId:session.id,requestId:selected.requestId,tabId:1,ply:1});
+    expect(last()).toMatchObject({ply:2,ai:false,background:true});
+    const background=last();
+    controller.handle({type:'REVIEW_TEXT',sessionId:session.id,requestId:selected.requestId,tabId:1,text:'Selected explanation stays current.'});
+    progress({state:'ready',provider:'chrome'},selected);
+    expect(card.explanation.textContent).toBe('Selected explanation stays current.');
+    result(background);
+    expect(last()).toMatchObject({ply:3,background:true});
+});
+
+it('keeps practice hidden from normal review, checks a legal alternative, and records an independent solution',async()=>{
+    update(1);const before=evaluation([{uci:'d2d4',san:'d4',pv:'d4',score:0}]);
+    result(last(),{before,feedback:{label:'Mistake',summary:'A setback.'}});
+    card.learning.element.querySelector<HTMLButtonElement>('[data-action="practice"]')!.click();
+    await Promise.resolve();
+    expect(card.host.hasAttribute('data-practice')).toBe(true);
+    expect(card.learning.practicing).toBe(true);
+    expect(layers.mock.calls.at(-1)?.[2].arrows??[]).toEqual([]);
+    const input=card.learning.element.querySelector<HTMLInputElement>('[data-san]')!;
+    input.value='d4';card.learning.element.querySelector('form')!.dispatchEvent(new Event('submit',{cancelable:true}));
+    expect(last()).toMatchObject({ply:1,attempt:'d2d4',profile:'confirm',ai:false});
+    controller.handle({type:'REVIEW_PRACTICE_RESULT',sessionId:session.id,requestId:last().requestId,tabId:1,ply:1,attempt:'d2d4',accepted:true,uncertain:false,feedback:{label:'Best',summary:'A sound alternative.'}});
+    expect(card.learning.element.querySelector('.practice-result')!.textContent).toContain('Good solution');
+    expect(card.learning.element.querySelector('form')!.hidden).toBe(true);
+    expect(send).toHaveBeenCalledWith({type:'REVIEW_PRACTICE_RECORD',sessionId:session.id,ply:1,outcome:'solved'});
+    card.learning.element.querySelector<HTMLButtonElement>('[data-action="cancel"]')!.click();
+    expect(card.host.hasAttribute('data-practice')).toBe(false);
+});
+
+it('restores results for the same game without mixing other games',async()=>{
+    const after=evaluation([{uci:'e7e5',san:'e5',pv:'e5',score:0}]);
+    send.mockImplementation(async m=>m.type==='GET_REVIEW_STATE'?{state:{session,assessments:[{ply:1,after,feedback:{label:'Good',summary:'Saved.'}}],preferences:{level:'advanced',side:'w',visuals:false},attempts:[],running:false,updatedAt:1}}:{});
+    controller.start(session);update(1);await Promise.resolve();await Promise.resolve();
+    expect(card.reviewIssues.querySelector('summary')!.textContent).toContain('(0)');
+    expect(card.learning.element.querySelector<HTMLSelectElement>('[data-level]')!.value).toBe('advanced');
+    expect(card.reviewProgress.textContent).toContain('1 of 3');
 });

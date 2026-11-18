@@ -1,4 +1,4 @@
-﻿# Kibitz
+# Kibitz
 
 Kibitz is a Chrome extension that helps you understand chess moves on **Chess.com** and **Lichess**.
 
@@ -26,7 +26,9 @@ Use Kibitz for study, analysis, completed-game review, and practice against a co
 
 ## 1. Install the extension
 
-You need **desktop Chrome 116 or newer** and **Node.js 22 or newer**, which includes npm. Built-in Chrome AI has additional browser and hardware requirements; Kibitz checks availability at runtime. See [Chrome's current Prompt API documentation](https://developer.chrome.com/docs/ai/prompt-api).
+You need **desktop Chrome 116 or newer**. For a packaged release, unzip `releases/kibitz-1.1.0.zip`, open `chrome://extensions`, enable Developer mode, choose Load unpacked, and select the extracted folder. End users do not need Node.js.
+
+To build from source, use **Node.js 22 or newer**, which includes npm. Built-in Chrome AI has additional browser and hardware requirements; Kibitz checks availability at runtime. See [Chrome's current Prompt API documentation](https://developer.chrome.com/docs/ai/prompt-api).
 
 Open a terminal in this project folder and run:
 
@@ -47,7 +49,7 @@ After changing the code, run `npm run build` again, click **Reload** on Kibitz's
 
 ## 2. Set up AI explanations
 
-Click the **Kibitz extension icon** to open settings. If the icon is hidden, find Kibitz in Chrome's Extensions menu (the puzzle-piece icon).
+Click the **Kibitz extension icon** to open the review workspace, then choose **Settings** for optional AI configuration. Core review and verified explanations work without configuring AI. If the icon is hidden, find Kibitz in Chrome's Extensions menu (the puzzle-piece icon).
 
 The default mode is **Automatic**, which tries these sources in order:
 
@@ -109,32 +111,26 @@ Existing keys migrate automatically: Kibitz saves them locally before removing t
 
 ### Review a game from your history
 
-1. On Chess.com or Lichess, open your game history and select a finished game.
-2. Click **Review with Kibitz** on the board card. You can also open settings and click **Review selected game**. You do not need the site's game-review report.
-3. Use **the website's existing move list and previous/next controls**. Kibitz follows the position on that board; it does not create another board.
-4. Read what the played move allowed, missed, or cost. Review does not display candidate arrows, a candidate heatmap, or a ranked next-move list.
-5. Look for **?!** (inaccuracy), **?** (mistake), **??** (blunder), or **M?** (missed mate) beside the played destination. Problem moves also have subtle origin/destination highlights. A dashed gold outline marks a piece or king affected in a legally replayed searched continuation when that evidence is available.
-6. Open **Moves to revisit** for the analyzed inaccuracies and worse moves. Click an entry to select its native move when the website exposes a unique supported move node. Otherwise, use the website's move list; Kibitz does not guess an unsupported navigation method.
+1. Open a finished game on Chess.com or Lichess and choose **Review with Kibitz** on the card, or **Review selected game** in the panel.
+2. The selected move is analyzed first. A pausable whole-game pass starts automatically. Preliminary feedback appears before a deeper confirmation finishes.
+3. Use **Review** in the panel for the evaluation graph, player accuracy, key moments, and takeaways. The position selector is a keyboard-accessible alternative to clicking the graph.
+4. Choose **Next key moment**, or use the website's existing move controls. White / Black / Both filters affect lesson selection; orientation does not determine player identity.
+5. Select a learning level: Beginner adds everyday explanations and a practical lesson; Intermediate focuses on the verified consequence; Advanced includes concise notation and the searched line. The underlying assessment is the same.
+6. Choose **Show why** to reveal consequence highlights. **Show better move** returns to the earlier position and reveals a single alternative arrow when native navigation can verify it. Otherwise, use the text in Details and the website controls.
+7. Choose **Try a better move** for an exercise. Kibitz hides its evaluation, explanation, and solution overlays. Enter SAN such as `Nf3`, or select From / To / Promotion without needing notation. Hints, reveal, skip, and Return to game remain available.
+8. Visit **Lessons** for saved reviews, recurring themes, exercise outcomes, and deletion controls. Reopening an explicitly started review restores compatible results. Exit review prevents automatic resumption until you start it again.
 
-The selected move is analyzed first. Choose **Analyze whole game** on the card for a full pass, or pause it whenever you want. This does not move the website's board. Ratings are provisional Kibitz estimates from consistent local engine searches, not the site's own accuracy scores. Positive evaluations favor White, regardless of which player made the move.
+Review keeps the website's board and does not require the site's review report. Core analysis runs locally. Optional AI wording uses the existing local-first provider chain; failed providers leave deterministic feedback available. A background sweep does not request AI wording for every position.
 
-Explanations follow a consistent reading order within the existing text areas: the main takeaway, concrete effects on named pieces and squares, then a brief plain-language meaning. For example, a checking move names the attacked king before explaining what check requires. Attacks and possible captures are not presented as guaranteed material wins. Reviews lead with the played move's assessment and consequences; analysis explains the recommended move. The same wording rules apply to local explanations and approved AI fact selections. Supporting alternatives and review evaluation details remain in Details; this organization adds no controls or layout changes.
+**Kibitz accuracy** is a versioned engine estimate, not a player rating or the site's own score. Assessments use mover-relative winning-chance loss: up to 2 percentage points is Excellent (Best also requires matching the engine choice), then Good through 5, Inaccuracy through 10, Mistake through 20, and Blunder above 20. Mate outcomes are handled separately. Centipawn changes remain in Details and do not mean that pieces were captured. Game accuracy combines volatility weighting and a harmonic mean. The actual imported initial-position evaluation is used for custom starts.
 
-Review explanations compare the played move with the preferred before-move continuation. They follow up to ten legal PV plies, account for exchanges and legal recaptures, and distinguish pre-existing tension from a newly exposed piece or a removed recapturer. An ordinary check, equal trade, or exchange cut off before a recapture does not become a material-loss warning. Verified forks, pinned recapturers, central recapture options, pawn pressure on development squares, and changed checking lines can supply specific context. These are bounded observations from the searched lines, not proof that every continuation has the same outcome. When those lines do not establish a cause, Kibitz says so briefly instead of inventing one.
+Standard searches use 1,500 ms and confirmation uses 5,000 ms per position. Serious errors, mate transitions, boundary cases, and conflicting searches receive confirmation. Disagreement remains provisional and is excluded from lesson selection. Ordinary checks, equal exchanges, and incomplete recaptures do not establish material losses. The captured `4. g3` central-tension regression still explains the verified recapture difference without inventing a material loss.
 
-**Details** includes the numbered **One searched continuation** after the played move, with readable move names and search depth when available. The **Better alternative from the previous position** is a separate branch. For the reported `4. g3` central-tension example, a captured Stockfish search shows equal material after the displayed exchanges but fewer immediate recapture options on E4 than the preferred developing move; the pawn does not receive a misleading material-loss outline. Developers can refresh that local regression snapshot with `node scripts/capture-review-fixture.mjs` and inspect any changed search results before updating expectations.
+Practice checks a separate legal branch and leaves the recorded game intact. An alternative within two winning-chance percentage points of the preferred continuation can be accepted when it avoids a worse mate outcome. Uncertain answers do not affect solution statistics. Native-board variation input is not enabled; SAN and square entry are the supported practice methods. The website's own engine UI may remain visible: Kibitz can hide its own answers, not another product's controls.
 
-The **On the board** section explains the selected move in plain language, names each highlighted square and piece, and shows matching outline samples. For example: ?White moved the pawn from G2 to G4? and ?The gold outline marks White's king,? followed by the verified threat. Immediate replies are distinguished from events later in one possible continuation. A check alone does not mean a piece is lost or the game is over. The full symbol key is expandable; understanding the cues requires no hovering or color recognition. Evaluation changes appear in Details as pawn units, not as a count of pieces actually lost.
+History is stored only on this Chrome profile, limited to 50 games, 500 attempt records, and 5 MiB. Provider prompts and AI prose are not retained. Clear learning history and per-game deletion include protection against delayed writes recreating deleted records. Explicitly starting that game again permits a new saved review. Engine/scoring changes invalidate incompatible results. Optional level suggestions require five complete reviews and ten first-attempt outcomes; they never change the level automatically.
 
-The gold-framed card uses readable labels such as **Knight to F3**. Review keeps its grade separate and acknowledges accurate moves briefly. Explanations of problem moves prioritize verified consequences. A **Better alternative from the previous position** appears only in Details for a problem move, with its legally replayed continuation when available. It never replaces the played move's heading or becomes a recommendation overlay.
-
-AI explanations run automatically for analysis and each verified selected move in supported native navigation. Automatic mode tries Chrome AI, then Ollama, then your configured cloud service when its key and host permission are available. Rapid navigation cancels obsolete work; only the settled selection is explained. Verified feedback remains visible while AI prepares its explanation. Full-game background analysis gathers evidence without making an AI request for every move; selecting a move requests its explanation.
-
-If eligible providers fail or return unsupported claims, Kibitz shows verified application wording with an explicit fallback status. The automatic provider chain has a 45-second overall deadline. The explanation button retries AI, and revisiting a move retries a previous fallback. Successful validated plans are cached in offscreen memory for five minutes (up to 40 entries), keyed by the full evidence and provider. Model, credential, provider or settings changes invalidate them. Cloud permission is checked before a cached cloud plan is reused.
-
-Review works with the settings panel closed. It uses consistent local Stockfish comparisons rather than website candidate suggestions. Alternatives remain notation in Details; Kibitz does not draw future positions or recommendation arrows over the review board. A completed-game page waits for **Review with Kibitz** instead of starting ordinary suggestions. To explore recommended moves, open an analysis or study board.
-
-If the selected page does not expose a complete game, expand **Have a PGN instead?** in settings and use **Apply PGN on page**. Paste the game or choose a `.pgn` file while the website displays a matching mainline position on a completed-game or study board. The import supplies history without creating a board. Lichess can also supply the selected finished game's PGN through its public game-export service. Kibitz does not scan your account's game history.
+If capture fails, expand **Have a PGN instead?** and import one standard-chess game while the website displays a matching position. Unsupported navigation asks you to use the site's controls rather than guessing.
 
 ### Follow a study board
 
@@ -316,7 +312,7 @@ node scripts/benchmark-openings.mjs
 
 Run these after a build. `npm run build` already runs budget checks. Rollup module attribution and reports are written under ignored `.bundle/`, outside the packaged extension. The report lists raw/gzip sizes, differences from baseline, and modules present in both build contexts. Per-module rendered sizes precede final minification; final file sizes are measured directly.
 
-`scripts/bundle-budgets.json` caps content at 200,000 bytes, offscreen at 100,000, all non-engine JavaScript at 300,000, the opening asset at 665,000, and the package at 8,500,000. Checks reject missing budgeted files, re-embedded opening data, and multiple opening assets. Changes to budgets should explain a measured tradeoff.
+`scripts/bundle-budgets.json` caps content at 200,000 bytes, offscreen at 100,000, all non-engine JavaScript at 350,000, the opening asset at 665,000, and the package at 8,500,000. Checks reject missing budgeted files, re-embedded opening data, and multiple opening assets. Changes to budgets should explain a measured tradeoff.
 
 A lossless shared-prefix experiment reduced raw opening data by only about 8%, increased gzip size from roughly 89 KB to 104 KB, and decoded more slowly in the recorded run. The shipped format remains simple JSON. The benchmark verifies exact round-trip preservation of every sequence/FEN and reports fresh measurements; Node decoding timings are not browser startup timings.
 
@@ -353,3 +349,20 @@ Kibitz includes unmodified Stockfish.js 17.1.0 engine files. Stockfish is licens
 The build puts its license in `dist/engine/COPYING.txt` and source information in `dist/ENGINE-SOURCE.txt`. Keep these files and follow the GPL distribution requirements when sharing the engine files. Kibitz does not load executable code from a remote server.
 
 Opening names/sequences use the CC0 Lichess dataset pinned to commit `a6189a30dc273ccb21fc2536a9a2fefd5592a67a`. Source TSVs, attribution, and revision live in `src/data/`; the build includes `OPENINGS-LICENSE.md`, `openings-revision.txt`, and exactly one generated 3,865-row index. Coaching notes are original application text.
+
+### Version 1.1 development checks
+
+```sh
+npm test
+npm run build
+npm run benchmark:coaching
+npm run package
+```
+
+`npm run package` also requires Python 3 for the standard-library ZIP packager. It creates a versioned extension ZIP and SHA-256 checksum in `releases/`. No hosting or store publication occurs.
+
+The browser scripts prefer installed testing Chromium, or accept `CHROME_PATH`. Ordinary Chrome builds may refuse command-line extension loading. `node scripts/browser-smoke.mjs` covers the extension pipeline, native fixtures, overview, reveal, practice, resume, deletion, and responsive placement. AI inference in that suite is mocked. `node scripts/ai-placement-smoke.mjs` tests real provider availability separately; an unavailable provider is not a successful inference.
+
+The coaching benchmark uses the same analyzer and pinned engine through a Node worker adapter. Its examples, evidence, timings, and blank expert-comparison rubric are written to `.bundle/coaching-benchmark/`. This is a local correctness and performance aid, not evidence that Kibitz matches or exceeds Chess.com coaching.
+
+The JavaScript budget is 350,000 bytes for the new review model, practice UI, overview, and storage validation. The total package limit remains 8.5 MB and the content-script limit remains 200 KB. See [RELEASE_READINESS.md](RELEASE_READINESS.md) for verification boundaries and human release gates.

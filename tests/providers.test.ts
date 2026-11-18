@@ -100,10 +100,10 @@ it('reports invalid plans and skips cloud inference without permission', async (
     const fetch = vi.fn(async () => response('{"response":"unchecked secret model prose"}\n'));
     vi.stubGlobal('fetch', fetch); const report = vi.fn();
     expect(await explain(config, DEFAULT_POSITION, result, new AbortController().signal, () => {}, () => {}, undefined, report)).toBe('facts');
-    expect(fetch).toHaveBeenCalledOnce();
+    expect(fetch).toHaveBeenCalledTimes(2);
     expect(report.mock.calls.map(([value]) => value)).toEqual([
-        { code: 'PROVIDER_UNAVAILABLE', provider: 'chrome' }, { code: 'INVALID_PROVIDER_RESPONSE', provider: 'ollama' },
-        { code: 'PROVIDER_UNAVAILABLE', provider: 'gemini' },
+        { code: 'PROVIDER_UNAVAILABLE', provider: 'chrome',reason:'not-supported' }, { code: 'INVALID_PROVIDER_RESPONSE', provider: 'ollama',reason:'invalid-format' },
+        { code: 'PROVIDER_UNAVAILABLE', provider: 'gemini',reason:'permission' },
     ]);
     expect(JSON.stringify(report.mock.calls)).not.toContain('secret');
 });
@@ -142,7 +142,7 @@ it('clips collection at 600 characters and cancels the provider stream', async (
     }))));
     const output: string[] = [];
     expect(await explain(config, DEFAULT_POSITION, result, new AbortController().signal, text => output.push(text))).toBe('facts');
-    expect(cancel).toHaveBeenCalledOnce(); expect(output).toHaveLength(1); expect(output[0]).not.toContain('xxxx');
+    expect(cancel).toHaveBeenCalledTimes(2); expect(output).toHaveLength(1); expect(output[0]).not.toContain('xxxx');
 });
 it('includes a stuck permission check in the cloud deadline', async () => {
     vi.useFakeTimers(); const config = settings(); config.provider = 'gemini'; config.keys.gemini = 'private';
@@ -152,7 +152,7 @@ it('includes a stuck permission check in the cloud deadline', async () => {
     const promise = explain(config, DEFAULT_POSITION, result, new AbortController().signal, () => {}, () => {}, undefined, report);
     await vi.advanceTimersByTimeAsync(20000);
     expect(await promise).toBe('facts'); expect(fetch).not.toHaveBeenCalled();
-    expect(report).toHaveBeenCalledWith({ code: 'PROVIDER_UNAVAILABLE', provider: 'gemini' });
+    expect(report).toHaveBeenCalledWith({ code: 'PROVIDER_UNAVAILABLE', provider: 'gemini',reason:'timeout' });
 });
 it('cancels a stalled permission check and ignores a late grant', async () => {
     const config = settings(); config.provider = 'groq'; config.keys.groq = 'private';

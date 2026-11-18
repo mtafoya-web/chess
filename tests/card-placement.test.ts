@@ -61,6 +61,17 @@ it('uses measured adjacent room below the former 1000px cutoff', () => {
     bounds(adjacent, () => rect(600, 0, 300, 100 + (placement.slot.parentElement === adjacent ? slotHeight() : 0)));
     placement.attach(board, true); expect(placement.slot.parentElement).toBe(adjacent);
 });
+it('recovers beside the board when native column dimensions change without a viewport resize',()=>{
+    const {placement,board,adjacent,host}=fixture(940); let width=240;
+    const height=()=>Math.max(200,Number.parseFloat(placement.slot.style.minHeight)||0);
+    bounds(adjacent,()=>rect(600,0,width,100+(placement.slot.parentElement===adjacent?height():0)));
+    bounds(placement.slot,()=>placement.slot.parentElement===adjacent?rect(600,100,width,height()):rect(0,600,560,200));
+    bounds(host,()=>placement.slot.getBoundingClientRect());
+    placement.attach(board,true);expect(placement.slot.parentElement).toBe(document.body);
+    width=300;callbacks[0]();vi.runAllTimers();expect(placement.slot.parentElement).toBe(adjacent);
+    const observer=new MutationObserver(()=>{});observer.observe(document.body,{subtree:true,childList:true});
+    placement.attach(board,true);expect(observer.takeRecords()).toHaveLength(0);observer.disconnect();
+});
 it('reserves a reversible adjacent grid column around fixed native tools without shrinking the board', () => {
     const { placement, board, adjacent, host, main } = fixture(940);
     adjacent.style.maxHeight = '500px';
@@ -77,7 +88,7 @@ it('reserves a reversible adjacent grid column around fixed native tools without
     placement.attach(board, true);
     const wrapper = document.querySelector('[data-kibitz-column]');
     expect(wrapper?.contains(placement.slot)).toBe(true); expect(wrapper?.contains(adjacent)).toBe(true);
-    expect(adjacent.nextElementSibling).toBe(placement.slot);
+    expect(placement.slot.nextElementSibling).toBe(adjacent);
     expect(board.getBoundingClientRect().width).toBe(500);
     placement.destroy(); expect(main.contains(adjacent)).toBe(true); expect(document.querySelector('[data-kibitz-column]')).toBeNull();
     create.mockRestore();

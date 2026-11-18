@@ -17,6 +17,18 @@ describe('completed game capture', () => {
         expect(snapshot).toMatchObject({ completed: true, gameId: '1234', pgn });
         expect(captureSession(snapshot).moves).toHaveLength(2);
     });
+    it('resolves a selected completed game while the Chess.com history URL stays on the history page', () => {
+        document.body.innerHTML = '<div class="game-over-component">White won</div><wc-chess-board></wc-chess-board><a class="selected" href="/game/live/1234">Selected game</a>';
+        const board = document.querySelector('wc-chess-board') as Element & { game: { getPGN: () => string; getHeaders: () => Record<string, string> } };
+        board.game = {
+            getPGN: () => `[Link "https://www.chess.com/game/live/1234"]\n${pgn}`,
+            getHeaders: () => ({ Result: '1-0', Link: 'https://www.chess.com/game/live/1234' }),
+        };
+        const run = new Function('location', 'document', 'HTMLTextAreaElement', `return (${readGameSnapshot.toString()})();`);
+        const snapshot = run({ href: 'https://www.chess.com/games/archive/example' }, document, HTMLTextAreaElement);
+        expect(snapshot).toMatchObject({ completed: true, gameId: '1234', url: 'https://www.chess.com/game/live/1234' });
+        expect(captureSession(snapshot).moves).toHaveLength(2);
+    });
     it('blocks a running clock even with stale completion markers', () => {
         document.body.innerHTML = '<div class="game-over-modal">1-0</div><div class="rclock running"></div><textarea name="pgn"></textarea>';
         document.querySelector('textarea')!.value = pgn;

@@ -34,7 +34,7 @@ export function readSiteTheme(board: HTMLElement, lichess: boolean, context = bo
     const bg = luminance(background), fg = luminance(foreground);
     if ((Math.max(bg, fg) + .05) / (Math.min(bg, fg) + .05) < 4.5) foreground = bg > .179 ? '#242424' : '#eeeeee';
     return { site: lichess ? 'lichess' : 'chesscom', background, foreground,
-        accent: lichess ? (bg > .179 ? '#45721a' : '#8fbb5b') : (bg > .179 ? '#496f24' : '#a0c66a'),
+        accent: lichess ? (bg > .179 ? '#45721a' : '#79b5d6') : (bg > .179 ? '#496f24' : '#79b5d6'),
         radius: lichess ? '4px' : '8px', fontFamily: textStyle.fontFamily || 'system-ui, sans-serif', dark: bg <= .179 };
 }
 export function isSiteTheme(value: unknown): value is SiteTheme {

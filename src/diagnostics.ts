@@ -1,3 +1,4 @@
+import { FAILURE_REASONS, type FailureReason } from './provider-failures';
 /** Diagnostics are data, never exception messages or provider payloads. */
 export const DIAGNOSTIC_CODES = [
     'UNSUPPORTED_BOARD_STATE', 'SITE_ADAPTER_UNAVAILABLE', 'PROVIDER_UNAVAILABLE',
@@ -10,6 +11,7 @@ export interface Diagnostic {
     provider?: 'chrome' | 'ollama' | 'gemini' | 'openai' | 'groq';
     site?: 'chesscom' | 'lichess';
     requestId?: string;
+    reason?: FailureReason;
 }
 export type DiagnosticReporter = (value: Diagnostic) => void;
 export function isDiagnostic(value: unknown): value is Diagnostic {
@@ -24,6 +26,7 @@ export function diagnostic(code: DiagnosticCode, context: unknown = {}): Diagnos
     const result: Diagnostic = { code: DIAGNOSTIC_CODES.includes(code) ? code : 'PROTOCOL_INVALID' };
     if (!context || typeof context !== 'object') return result;
     const input = context as Record<string, unknown>;
+    if (FAILURE_REASONS.includes(input.reason as FailureReason)) result.reason = input.reason as FailureReason;
     if (['chrome', 'ollama', 'gemini', 'openai', 'groq'].includes(input.provider as string)) result.provider = input.provider as Diagnostic['provider'];
     if (input.site === 'chesscom' || input.site === 'lichess') result.site = input.site;
     if (typeof input.requestId === 'string' && /^[a-zA-Z0-9_-]{1,120}$/.test(input.requestId)) result.requestId = input.requestId;

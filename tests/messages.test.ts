@@ -5,6 +5,16 @@ import { DEFAULT_SETTINGS } from '../src/types';
 import { canSendRequest, contextFor, isAnalysisEvent, isBackgroundRequest, isBackgroundSender, isContentMessage, isOffscreenCommand, isPanelMessage } from '../src/messages';
 const fen = new Chess().fen();
 const analysis = { type: 'ANALYSIS_REQUEST', requestId: 'opaque', fen, orientation: 'white' };
+it('restricts Test AI to the panel and validates the private offscreen settings',()=>{
+    expect(isBackgroundRequest({type:'TEST_AI'})).toBe(true);
+    expect(canSendRequest({type:'TEST_AI'},'content')).toBe(false);
+    expect(canSendRequest({type:'TEST_AI'},'panel')).toBe(true);
+    expect(isOffscreenCommand({target:'offscreen',type:'EXPLANATION_TEST',settings:{...DEFAULT_SETTINGS,keys:{}}})).toBe(true);
+    expect(isOffscreenCommand({target:'offscreen',type:'EXPLANATION_TEST',settings:{...DEFAULT_SETTINGS,keys:{unknown:'private'}}})).toBe(false);
+    const state={type:'EXPLANATION_STATE',tabId:1,requestId:'test',fen,state:'fallback',provider:'facts',attempts:[{provider:'chrome',reason:'download-required'}]};
+    expect(isAnalysisEvent(state)).toBe(true);
+    expect(isAnalysisEvent({...state,attempts:[{provider:'chrome',reason:'secret'}]})).toBe(false);
+});
 it('requires tab and page identity on panel theme messages', () => {
     const message = {type:'SITE_THEME',tabId:12,url:'https://lichess.org/analysis'};
     expect(isPanelMessage(message)).toBe(true);
@@ -31,12 +41,24 @@ it('bounds opening metadata without accepting malformed nested matches', () => {
 beforeEach(() => vi.stubGlobal('chrome', { runtime: { id: 'kibitz', getURL: (p: string) => `chrome-extension://kibitz/${p}` } }));
 it('rejects malformed/oversized public inputs before dispatch', () => {
     expect(isBackgroundRequest({type:'NATIVE_REVIEW_NAVIGATE',direction:'select',ply:3})).toBe(true);
-    for(const ply of [undefined,0,-1,1501,1.2,'3'])expect(isBackgroundRequest({type:'NATIVE_REVIEW_NAVIGATE',direction:'select',ply})).toBe(false);
+    expect(isBackgroundRequest({type:'NATIVE_REVIEW_NAVIGATE',direction:'select',ply:0})).toBe(true);
+    for(const ply of [undefined,-1,1501,1.2,'3'])expect(isBackgroundRequest({type:'NATIVE_REVIEW_NAVIGATE',direction:'select',ply})).toBe(false);
     expect(isBackgroundRequest(analysis)).toBe(true);
     for (const bad of [null, [], { ...analysis, fen: '8/8/8/8/8/8/8/8 w' }, { ...analysis, requestId: 'x'.repeat(121) }, { ...analysis, orientation: 'w' }, { type: 'SET_OVERLAY_PREFERENCES', heatmap: true, arrows: 1 }, { type: 'IMPORT_PAGE_REVIEW', pgn: 'x'.repeat(262145) }]) expect(isBackgroundRequest(bad)).toBe(false);
     const review = { type: 'REVIEW_ANALYZE', sessionId: 'session', requestId: 'opaque', initialFen: fen, moves: ['e2e4'], ply: 1 };
     expect(isBackgroundRequest(review)).toBe(true);
     for (const bad of [{ ...review, moves: ['e4'] }, { ...review, ply: 2 }, { ...review, moves: Array(1501).fill('e2e4') }, { ...review, background: 'true' }]) expect(isBackgroundRequest(bad)).toBe(false);
+});
+
+it('bounds practice and review controls and keeps saved history in trusted contexts',()=>{
+    expect(canSendRequest({type:'GET_LEARNING_HISTORY'},'content')).toBe(false);
+    expect(canSendRequest({type:'DELETE_LEARNING_HISTORY'},'content')).toBe(false);
+    expect(canSendRequest({type:'REVIEW_CONTROL',sessionId:'s',action:'select',ply:0},'content')).toBe(false);
+    const practice={type:'REVIEW_ANALYZE',sessionId:'s',requestId:'r',initialFen:fen,moves:['e2e4'],ply:1,ai:false,attempt:'d2d4',profile:'confirm'};
+    expect(isBackgroundRequest(practice)).toBe(true);
+    for(const change of [{ai:true},{background:true},{ply:0},{attempt:'d4'},{profile:'infinite'},{level:'invented'}])expect(isBackgroundRequest({...practice,...change})).toBe(false);
+    expect(isBackgroundRequest({type:'REVIEW_CONTROL',sessionId:'s',action:'preferences',preferences:{level:'beginner',side:'both',visuals:true}})).toBe(true);
+    expect(isBackgroundRequest({type:'REVIEW_CONTROL',sessionId:'s',action:'preferences'})).toBe(false);
 });
 it('validates nested result scores and bounded diagnostics', () => {
     const event = { type: 'ENGINE_RESULT', requestId: 'opaque', tabId: 1, result: evaluation([]) };

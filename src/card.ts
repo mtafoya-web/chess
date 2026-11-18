@@ -9,11 +9,15 @@ import { Chess } from 'chess.js';
 import { KIBITZ_MARK } from './wordmark';
 import type { OpeningContext } from './opening-context';
 import { reviewInsight, reviewLabel, type ReviewInsight } from './review-insights';
+import { ReviewTools, reviewStyles } from './review-tools';
 const candidateScore = (candidate: Evaluation['candidates'][number]) => {
     const mate = candidateWhiteMate(candidate);
     return mate !== undefined ? `${mate < 0 ? '-' : ''}M${Math.abs(mate)}` : `${candidate.score >= 0 ? '+' : ''}${candidate.score.toFixed(2)}`;
 };
 export class Card {
+    readonly learning = new ReviewTools();
+    private reviewAnnouncement = document.createElement('span');
+    private lastAnnounced = '';
     private themePage = '';
     private pageTheme?: SiteTheme;
     readonly host = document.createElement('div');
@@ -54,8 +58,8 @@ export class Card {
         this.host.style.cssText = 'display:block;position:relative;box-sizing:border-box;width:100%;min-width:0;max-width:min(560px,100%);margin:12px 0;clear:both;flex-shrink:1;container-type:inline-size;container-name:kibitz;';
         this.root.innerHTML = `<style>
             :host{font:inherit;color:var(--k-fg,#eee)}*{box-sizing:border-box}article{font:inherit;font-size:14px;line-height:1.5;background:var(--k-bg,#262421);border:2px solid var(--k-gold,#b38a30);border-radius:var(--k-radius,8px);padding:14px 16px;box-shadow:0 2px 7px #0000000a}
-            header{display:flex;align-items:center;gap:9px}button{margin-left:auto;background:none;border:0;color:inherit;font:inherit;cursor:pointer;padding:2px 7px;border-radius:4px}.brand{margin:0;padding:0;display:inline-flex;align-items:center;gap:7px;font-size:16px;font-weight:650;letter-spacing:-.02em}.brand svg{width:24px;height:24px;color:var(--k-gold,#b38a30)}.disclosure{font-size:12px;opacity:.7}button:hover{background:#8882}button:focus-visible,summary:focus-visible{outline:2px solid var(--k-accent,#82a958);outline-offset:3px}[hidden]{display:none!important}
-            .recommendation{display:flex;align-items:center;gap:12px;margin-top:6px}h2{font-size:22px;line-height:1.3;margin:0;font-weight:650}.eval{margin-left:auto;font-variant-numeric:tabular-nums;font-size:13px}.track{height:4px;width:48px;background:#777;border-radius:3px;overflow:hidden}.fill{height:100%;width:50%;background:var(--k-accent,#82a958)}p{margin:8px 0 0}p:empty{display:none}.status{font-size:12px;opacity:.75}details{margin-top:10px;font-size:12px}summary{cursor:pointer;opacity:.8;width:fit-content}.lines{white-space:pre-wrap;overflow-wrap:anywhere;margin-top:8px;opacity:.85}code{font:inherit}strong{font-weight:650}
+            header{display:flex;align-items:center;gap:9px}button{margin-left:auto;background:none;border:0;color:inherit;font:inherit;cursor:pointer;padding:2px 7px;border-radius:4px}.brand{margin:0;padding:0;display:inline-flex;align-items:center;gap:7px;font-size:16px;font-weight:650;letter-spacing:-.02em}.brand svg{width:24px;height:24px;color:var(--k-gold,#b38a30)}.disclosure{font-size:12px;opacity:.7}button:hover{background:#8882}button:focus-visible,summary:focus-visible{outline:2px solid var(--k-accent,#79b5d6);outline-offset:3px}[hidden]{display:none!important}
+            .recommendation{display:flex;align-items:center;gap:12px;margin-top:6px}h2{font-size:22px;line-height:1.3;margin:0;font-weight:650}.eval{margin-left:auto;font-variant-numeric:tabular-nums;font-size:13px}.track{height:4px;width:48px;background:#777;border-radius:3px;overflow:hidden}.fill{height:100%;width:50%;background:var(--k-accent,#79b5d6)}p{margin:8px 0 0}p:empty{display:none}.status{font-size:12px;opacity:.75}details{margin-top:10px;font-size:12px}summary{cursor:pointer;opacity:.8;width:fit-content}.lines{white-space:pre-wrap;overflow-wrap:anywhere;margin-top:8px;opacity:.85}code{font:inherit}strong{font-weight:650}
             article{min-width:0;padding:12px;font-size:16px;overflow-wrap:anywhere}header{flex-wrap:wrap}.brand{margin-left:0;min-width:0;white-space:normal}button,summary{min-height:44px}button{min-width:44px}summary{display:flex;align-items:center;max-width:100%}.recommendation{flex-wrap:wrap;gap:8px}h2{flex:1 1 120px;min-width:0;overflow-wrap:anywhere}.eval{max-width:100%;overflow-wrap:anywhere}.track{flex:0 0 48px}.status,.lines{overflow-wrap:anywhere}.lines{max-width:100%}@container kibitz (min-width:360px){article{padding:14px 16px;font-size:14px}}
         </style><article aria-label="Kibitz chess guidance"><header><button class="brand" aria-expanded="true" aria-controls="guidance" title="Collapse guidance">${KIBITZ_MARK}<span>Kibitz</span><span class="disclosure" aria-hidden="true">&#9662;</span></button><button data-close aria-label="Close Kibitz and pause analysis" title="Pause analysis">×</button></header><div id="guidance"><div class="recommendation"><h2>Ready to study</h2><span class="eval"></span><div class="track" aria-hidden="true"><div class="fill"></div></div></div><p class="explanation" aria-live="polite" aria-atomic="true"></p><p class="status" role="status"></p><details><summary>Details</summary><div class="lines"></div></details></div></article>`;
         this.heading = this.root.querySelector('h2')!; this.explanation = this.root.querySelector('.explanation')!;
@@ -65,7 +69,7 @@ export class Card {
         this.reviewControls = document.createElement('section');
         this.reviewControls.hidden = true;
         this.reviewControls.setAttribute('aria-label', 'Game review controls');
-        this.reviewControls.innerHTML = `<style>.review-options{display:flex;gap:8px 14px;flex-wrap:wrap;margin-top:8px}.review-options label{display:flex;align-items:center;gap:5px;min-height:44px}.review-actions{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}.review-actions button{margin:0;border:1px solid var(--k-border,#555);padding:5px 9px;font-size:12px;max-width:100%}.review-legend,.review-progress,.preview-note{font-size:12px;opacity:.8;overflow-wrap:anywhere}.review-ai-text{font-size:13px}</style><div class="review-options"><label><input type="checkbox" data-heatmap checked aria-label="Show candidate heatmap on website board">Candidate heatmap</label><label><input type="checkbox" data-arrows checked aria-label="Show ranked candidate arrows on website board">Candidate arrows</label></div><p class="review-legend"></p><p class="preview-note">Use the website's move controls to explore the game. Better alternatives stay in Details.</p><div class="review-actions"><button type="button" data-retry hidden>Retry selected move</button><button type="button" data-ai disabled>Explain with AI</button><button type="button" data-sweep>Analyze whole game</button><button type="button" data-stop>Exit review</button></div><p class="review-progress" role="status"></p>`;
+        this.reviewControls.innerHTML = `<style>.review-options{display:flex;gap:8px 14px;flex-wrap:wrap;margin-top:8px}.review-options label{display:flex;align-items:center;gap:5px;min-height:44px}.review-actions{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}.review-actions button{margin:0;border:1px solid var(--k-border,#555);padding:5px 9px;font-size:14px;max-width:100%}.review-legend,.review-progress,.preview-note{font-size:14px;opacity:1;overflow-wrap:anywhere}.review-ai-text{font-size:13px}</style><div class="review-options"><label><input type="checkbox" data-heatmap checked aria-label="Show candidate heatmap on website board">Candidate heatmap</label><label><input type="checkbox" data-arrows checked aria-label="Show ranked candidate arrows on website board">Candidate arrows</label></div><p class="review-legend"></p><p class="preview-note">Use the website's move controls or review key moments.</p><div class="review-actions"><button type="button" data-retry hidden>Retry selected move</button><button type="button" data-ai disabled>Explain with AI</button><button type="button" data-sweep>Analyze whole game</button><button type="button" data-stop>Exit review</button></div><p class="review-progress" role="status"></p>`;
         this.details.before(this.reviewControls);
         this.root.append(this.reviewControls.querySelector('style')!);
         this.layerControls = document.createElement('section');
@@ -97,6 +101,15 @@ export class Card {
         cueStyle.textContent = `.review-cue-explanation{margin:12px 0;border-top:1px solid var(--k-border,#7775);padding-top:8px}.review-cue-explanation h3{font:inherit;font-weight:650;margin:0}.cue-list{list-style:none;margin:8px 0;padding:0;display:grid;gap:8px}.cue-list li{display:flex;align-items:flex-start;gap:10px}.cue-sample{flex:0 0 20px;width:20px;height:20px;margin-top:2px;border:2px solid var(--cue-color);border-radius:3px;background:var(--cue-fill)}.cue-sample.origin{border-style:dashed}.cue-sample.consequence{border:3px dotted #f0b342;background:none}.cue-help p{font-size:inherit}.cue-help{font-size:inherit}`;
         this.root.append(cueStyle);
         this.reviewControls.append(this.reviewIssues);
+        const learningStyle = document.createElement('style'); learningStyle.textContent = reviewStyles;
+        this.root.append(learningStyle);
+        this.reviewControls.prepend(this.learning.element);
+        this.reviewRetry.textContent = 'Retry analysis';
+        this.reviewControls.querySelector('.preview-note')!.remove();
+        this.reviewProgress.removeAttribute('role');this.reviewProgress.setAttribute('aria-live','off');
+        this.reviewAnnouncement.setAttribute('role','status');
+        this.reviewAnnouncement.style.cssText='position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap';
+        this.reviewControls.append(this.reviewAnnouncement);
         this.reviewAIText = document.createElement('p'); this.reviewAIText.className = 'review-ai-text';
         this.explanation.after(this.reviewAIText);
         this.reviewAI.addEventListener('click', () => this.onReviewAI());
@@ -108,7 +121,7 @@ export class Card {
         this.reviewButton = document.createElement('button');
         this.reviewButton.type = 'button'; this.reviewButton.textContent = 'Review with Kibitz';
         this.reviewButton.hidden = true;
-        this.reviewButton.style.cssText = 'display:block;margin:10px 0 0;border:1px solid var(--k-accent,#82a958);padding:6px 12px;';
+        this.reviewButton.style.cssText = 'display:block;margin:10px 0 0;border:1px solid var(--k-accent,#79b5d6);padding:6px 12px;';
         this.reviewButton.addEventListener('click', () => this.onReview());
         this.root.querySelector('article')!.append(this.reviewButton);
         this.details.addEventListener('toggle', () => this.onDetails());
@@ -129,7 +142,12 @@ export class Card {
         this.reviewButton.hidden = active;
     }
     showReview(result: Evaluation, feedback?: MoveFeedback, before?: Evaluation, move?: ReviewMove, verifiedInsight?: ReviewInsight) {
-        this.heading.textContent = move ? `${readableMove(move.beforeFen, move.uci)} · ${reviewLabel(feedback?.label)}` : 'Starting position';
+        this.heading.textContent = move ? `${readableMove(move.beforeFen, move.uci)} · ${reviewLabel(feedback?.label)}${feedback?.provisional?' (provisional)':''}` : 'Starting position';
+        if (move) {
+            const grade=document.createElement('span');grade.className='review-grade';
+            grade.textContent=`${reviewLabel(feedback?.label)}${feedback?.provisional?' (provisional)':''}`;
+            this.heading.replaceChildren(document.createTextNode(`${readableMove(move.beforeFen,move.uci)} · `),grade);
+        }
         this.bar.style.width = `${50 + 48 * Math.tanh(result.whiteScore / 4)}%`;
         this.status.textContent = '';
         this.evaluation.textContent = `${before ? `${before.evaluation} → ` : ''}${result.evaluation}`;
@@ -165,7 +183,12 @@ export class Card {
         this.heatmapToggle.disabled = true; this.arrowsToggle.disabled = true;
     }
     showReviewAI(text: string, provider?: string) { this.explanation.textContent = text; this.reviewAIText.textContent = provider ? `Explanation by ${provider}` : 'Verified explanation'; }
-    setReviewProgress(analyzed: number, total: number, running: boolean) { this.reviewProgress.textContent = `${analyzed} of ${total} moves analyzed`; this.reviewSweep.textContent = running ? 'Pause analysis' : 'Analyze whole game'; }
+    setReviewProgress(analyzed: number, total: number, running: boolean) {
+        this.reviewProgress.textContent = `Positions reviewed: ${analyzed} of ${total}${running ? ' · analyzing' : ''}`;
+        this.reviewSweep.textContent = running ? 'Pause analysis' : 'Analyze whole game';
+        const milestone = `${Math.floor(analyzed/5)}:${total}:${running}:${analyzed===total}`;
+        if (milestone!==this.lastAnnounced) {this.lastAnnounced=milestone;this.reviewAnnouncement.textContent=this.reviewProgress.textContent;}
+    }
     setReviewIssues(issues: {ply:number;name:string;label:string;summary:string}[], selected?: number) {
         const list=this.reviewIssues.querySelector('ol')!;
         const focused=(this.root.activeElement as HTMLElement | null)?.dataset.issuePly;
