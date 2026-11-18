@@ -52,6 +52,8 @@ export class Card {
     readonly reviewProgress: HTMLElement;
     readonly reviewIssues: HTMLDetailsElement;
     readonly reviewAIText: HTMLElement;
+    readonly reviewExplanationStatus: HTMLElement;
+    private readonly reviewEvaluation = document.createElement('p');
     readonly reviewButton: HTMLButtonElement;
     constructor(close: () => void) {
         this.host.id = 'kibitz-card';
@@ -85,6 +87,7 @@ export class Card {
         this.opening = document.createElement('p'); this.opening.hidden = true; this.details.append(this.opening);
         this.positionFacts = document.createElement('details'); this.positionFacts.hidden = true; this.positionFacts.setAttribute('aria-label', 'Verified position facts'); this.details.append(this.positionFacts);
         this.reviewAI = this.reviewControls.querySelector('[data-ai]')!;
+        this.reviewAI.textContent = 'Explain further';
         this.reviewRetry = this.reviewControls.querySelector('[data-retry]')!;
         this.reviewSweep = this.reviewControls.querySelector('[data-sweep]')!;
         this.reviewProgress = this.reviewControls.querySelector('.review-progress')!;
@@ -106,12 +109,19 @@ export class Card {
         this.reviewControls.prepend(this.learning.element);
         this.reviewRetry.textContent = 'Retry analysis';
         this.reviewControls.querySelector('.preview-note')!.remove();
+        const management=document.createElement('details');management.className='review-management';
+        const managementSummary=document.createElement('summary');managementSummary.textContent='Review controls';management.append(managementSummary);
+        const managementActions=document.createElement('div');managementActions.className='review-actions';
+        managementActions.append(this.reviewSweep,this.reviewControls.querySelector('[data-stop]')!);management.append(managementActions);
+        this.reviewControls.append(management);
         this.reviewProgress.removeAttribute('role');this.reviewProgress.setAttribute('aria-live','off');
         this.reviewAnnouncement.setAttribute('role','status');
         this.reviewAnnouncement.style.cssText='position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap';
         this.reviewControls.append(this.reviewAnnouncement);
         this.reviewAIText = document.createElement('p'); this.reviewAIText.className = 'review-ai-text';
-        this.explanation.after(this.reviewAIText);
+        this.details.append(this.reviewEvaluation,this.reviewAIText);
+        this.reviewExplanationStatus = document.createElement('p');this.reviewExplanationStatus.className='status';this.reviewExplanationStatus.setAttribute('role','status');
+        this.explanation.after(this.reviewExplanationStatus);
         this.reviewAI.addEventListener('click', () => this.onReviewAI());
         this.reviewRetry.addEventListener('click', () => this.onReviewRetry());
         this.reviewSweep.addEventListener('click', () => this.onReviewSweep());
@@ -135,9 +145,10 @@ export class Card {
             toggle.title = body.hidden ? 'Expand guidance' : 'Collapse guidance';
         });
     }
-    clear(text: string) { this.reviewCueExplanation.hidden = true; this.reviewCueExplanation.replaceChildren(); this.showOpening(); this.positionFacts.hidden = true; this.positionFacts.replaceChildren(); this.heading.textContent = 'Ready to study'; this.explanation.replaceChildren(); this.reviewAIText.replaceChildren(); this.evaluation.textContent = ''; this.alternatives.textContent = ''; this.reviewLegend.textContent = 'Candidate heatmap colors compare legal candidate moves; they do not show every attacked square.'; this.sourceAttribution.textContent = ''; this.heatmapToggle.disabled = true; this.arrowsToggle.disabled = true; this.reviewAI.disabled = true; this.reviewRetry.hidden = true; this.status.textContent = text; this.bar.style.width = '50%'; }
+    clear(text: string) { this.reviewCueExplanation.hidden = true; this.reviewCueExplanation.replaceChildren(); this.showOpening(); this.positionFacts.hidden = true; this.positionFacts.replaceChildren(); this.heading.textContent = 'Ready to study'; this.explanation.replaceChildren(); this.reviewAIText.replaceChildren(); this.reviewExplanationStatus.replaceChildren(); this.reviewEvaluation.replaceChildren(); this.evaluation.textContent = ''; this.alternatives.textContent = ''; this.reviewLegend.textContent = 'Candidate heatmap colors compare legal candidate moves; they do not show every attacked square.'; this.sourceAttribution.textContent = ''; this.heatmapToggle.disabled = true; this.arrowsToggle.disabled = true; this.reviewAI.disabled = true; this.reviewRetry.hidden = true; this.learning.update(undefined,undefined,this.learning.currentPreferences); this.status.textContent = text; this.bar.style.width = '50%'; }
     setReviewMode(active: boolean) {
         this.reviewControls.hidden = !active; this.layerControls.hidden = active;
+        this.evaluation.hidden=active;
         if (active) this.reviewControls.prepend(this.reviewLegend); else { this.layerControls.append(this.reviewLegend); this.reviewAIText.replaceChildren(); }
         this.reviewButton.hidden = active;
     }
@@ -151,6 +162,7 @@ export class Card {
         this.bar.style.width = `${50 + 48 * Math.tanh(result.whiteScore / 4)}%`;
         this.status.textContent = '';
         this.evaluation.textContent = `${before ? `${before.evaluation} → ` : ''}${result.evaluation}`;
+        this.reviewEvaluation.textContent = `Evaluation: ${this.evaluation.textContent}. Positive values favor White.`;
         this.explanation.textContent = feedback?.summary ?? result.terminal ?? 'Select a played move to review what happened.';
         this.sourceAttribution.textContent = 'Move rating and consequences: local Stockfish comparison.';
         this.reviewAIText.replaceChildren(); this.reviewAI.disabled = !feedback;
@@ -182,11 +194,13 @@ export class Card {
         }
         this.heatmapToggle.disabled = true; this.arrowsToggle.disabled = true;
     }
-    showReviewAI(text: string, provider?: string) { this.explanation.textContent = text; this.reviewAIText.textContent = provider ? `Explanation by ${provider}` : 'Verified explanation'; }
-    setReviewProgress(analyzed: number, total: number, running: boolean) {
-        this.reviewProgress.textContent = `Positions reviewed: ${analyzed} of ${total}${running ? ' · analyzing' : ''}`;
-        this.reviewSweep.textContent = running ? 'Pause analysis' : 'Analyze whole game';
-        const milestone = `${Math.floor(analyzed/5)}:${total}:${running}:${analyzed===total}`;
+    showReviewAI(text: string, provider?: string) { this.explanation.textContent = text; this.reviewAIText.textContent = provider && !provider.toLowerCase().includes('verified') && !provider.toLowerCase().includes('facts') ? `AI coaching by ${provider}. Engine facts and searched lines support this interpretation.` : 'Verified explanation from local engine evidence.'; }
+    setReviewProgress(analyzed: number, total: number, running: boolean, label?: string) {
+        this.reviewProgress.textContent = label ?? `Positions reviewed: ${analyzed} of ${total}${running ? ' · analyzing' : ''}`;
+        this.reviewSweep.disabled = label?.startsWith('Review complete') ?? false;
+        this.reviewSweep.hidden = this.reviewSweep.disabled;
+        this.reviewSweep.textContent = this.reviewSweep.disabled ? 'Review complete' : running ? 'Pause analysis' : 'Analyze whole game';
+        const milestone = `${Math.floor(analyzed/5)}:${total}:${running}:${analyzed===total}:${label?.startsWith('Checking')?label:label?.split(':')[0]}`;
         if (milestone!==this.lastAnnounced) {this.lastAnnounced=milestone;this.reviewAnnouncement.textContent=this.reviewProgress.textContent;}
     }
     setReviewIssues(issues: {ply:number;name:string;label:string;summary:string}[], selected?: number) {

@@ -13,7 +13,6 @@ export class ReviewPanel {
     private introductionDismissed=false;
     private switchingGame=false;
     private section='review';
-    private timer?: ReturnType<typeof setTimeout>;
     constructor() {
         document.querySelectorAll<HTMLButtonElement>('[data-tab]').forEach(button=>button.addEventListener('click',()=>this.open(button.dataset.tab!)));
         el('dismiss-intro').addEventListener('click',()=>{this.introductionDismissed=true;document.querySelector<HTMLElement>('.first-use')!.hidden=true;});
@@ -38,7 +37,6 @@ export class ReviewPanel {
             try{await navigator.clipboard.writeText(text);el('support-status').textContent='Support diagnostics copied. No keys, game moves, or player names included.';}catch{el('support-status').textContent=text;}
         });
         void sendBackground({type:'GET_REVIEW_PREFERENCES'}).then(r=>{if(r.preferences){this.preferences=r.preferences;el<HTMLSelectElement>('learning-level').value=r.preferences.level;}}).catch(()=>{});
-        this.poll();
         void this.refresh();
         document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')void this.refresh();});
     }
@@ -50,19 +48,22 @@ export class ReviewPanel {
         if(section==='lessons')void this.history();else if(section==='review')void this.refresh();
     }
     changed(){if(this.section==='review')void this.refresh();}
-    private poll(){this.timer=setTimeout(async()=>{if(this.section==='review')await this.refresh();this.poll();},2000);}
-    destroy(){clearTimeout(this.timer);}
+    destroy(){}
     private async refresh(){
         if(this.refreshing)return;this.refreshing=true;
         try{
             const response=await sendBackground({type:'GET_REVIEW_STATE'});
             if(response.error) return;
             const state=response.state;
-            const signature=state?JSON.stringify([state.session.id,state.updatedAt,state.session.selectedPly,state.running,state.preferences,state.practicePly,state.active]):'none';
+            const signature=state?JSON.stringify([state.session.id,state.updatedAt,state.session.selectedPly,state.running,state.preferences,state.practicePly,state.active,state.runStatus,state.runError,state.phase]):'none';
             if(signature===this.signature || state?.session.id === this.current?.session.id && !state?.practicePly && !this.current?.practicePly && el('review-overview').contains(document.activeElement))return;
             if(state?.session.id!==this.current?.session.id)this.switchingGame=false;
             this.signature=signature;this.current=state;
             el('review-overview').replaceChildren();
+            // Keep start/retry feedback beside its button, and control errors
+            // visible above an active overview when the start section is hidden.
+            if(state)el('review-overview').before(el('review-status'));
+            else document.querySelector('.start .actions')?.after(el('review-status'));
             document.querySelector<HTMLElement>('.start')!.hidden=!!state&&!this.switchingGame;
             const firstUse=document.querySelector<HTMLElement>('.first-use');if(firstUse)firstUse.hidden=!!state||this.introductionDismissed;
             if(!state)return;
@@ -87,11 +88,14 @@ export class ReviewPanel {
         const summary=summarizeReview(state);
         const opening=state.assessments.filter(a=>a.opening?.current).sort((a,b)=>b.ply-a.ply)[0]?.opening?.current;
         if(opening)root.append(node('p',`${opening.name} (${opening.eco})`));
-        root.append(node('h2',state.session.title),node('p',`${state.session.result} · ${summary.analyzed} of ${summary.total} positions reviewed${state.running?' · analyzing':summary.complete?' · complete':' · paused'}`));
+        root.append(node('h2',state.session.title),node('p',`${state.session.result} - ${summary.progressText}${!state.running&&!summary.complete?' - paused':''}`));
+        if(state.runError)root.append(node('p',state.runError));
         const actions=node('div');actions.className='actions';
-        actions.append(this.button(state.active===false?'Resume review':'Start guided review',()=>void this.command({action:'next'}),true),this.button(state.running?'Pause analysis':summary.complete?'Recheck selected move':'Analyze whole game',()=>void this.command({action:summary.complete?'deeper':'sweep'})));root.append(actions);
+        actions.append(this.button(state.active===false?'Resume review':'Next key moment',()=>void this.command({action:'next'}),true));
+        if(!summary.complete)actions.append(this.button(state.running?'Pause analysis':'Resume analysis',()=>void this.command({action:'sweep'})));
+        root.append(actions);
         const scores=node('div');scores.className='review-scores';
-        for(const side of ['w','b']as const){const value=summary.accuracy[side];const block=node('div');block.append(node('strong',side==='w'?'White':'Black'),node('span',value===undefined?'—':value.toFixed(1)+'%'));scores.append(block);}root.append(scores,node('p',`Kibitz accuracy${summary.provisional?' · provisional':''}. ${summary.complete?'Engine estimates; not player ratings.':'Complete the analysis to calculate game accuracy.'}`));
+        for(const side of ['w','b']as const){const value=summary.accuracy[side];const block=node('div');block.append(node('strong',side==='w'?'White':'Black'),node('span',value===undefined?'—':value.toFixed(1)+'%'));scores.append(block);}root.append(scores,node('p',`Kibitz accuracy${summary.estimated?' - quick estimate':''}${summary.provisional?' - provisional':''}. ${summary.scanned===summary.total?(summary.complete?'Required key-moment checks finished. Engine estimates, not player ratings.':'Key moments are being checked; estimates can change.'):'The full estimate appears after the overview pass.'}`));
         const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');svg.setAttribute('viewBox','0 0 400 120');svg.setAttribute('aria-hidden','true');svg.classList.add('review-graph');
         const mid=document.createElementNS(svg.namespaceURI,'path');mid.setAttribute('d','M0 60H400');mid.setAttribute('class','graph-mid');svg.append(mid);
         let path='',previous=-2;
@@ -101,7 +105,7 @@ export class ReviewPanel {
         svg.addEventListener('click',event=>{const rect=svg.getBoundingClientRect();if(rect.width)void this.command({action:'select',ply:Math.max(0,Math.min(summary.total,Math.round((event.clientX-rect.left)/rect.width*summary.total)))});});
         root.append(node('p','Evaluation history · upper half favors White'),svg);
         const label=node('label','Select a position (same positions as the graph)');const select=node('select');select.append(new Option('Starting position','0'));
-        for(const move of state.session.moves){const assessment=state.assessments.find(a=>a.ply===move.ply);select.append(new Option(`${move.beforeFen.split(' ')[5]}${move.color==='w'?'.':'...'} ${move.san}${assessment?' · '+(assessment.feedback?.label??'Reviewed'):' · not analyzed'}`,String(move.ply)));}
+        for(const move of state.session.moves){const assessment=state.assessments.find(a=>a.ply===move.ply);select.append(new Option(`${move.beforeFen.split(' ')[5]}${move.color==='w'?'.':'...'} ${move.san}${assessment?' · '+(assessment.feedback?.label??'Reviewed')+(assessment.profile==='quick'?' (quick)':''):' · not analyzed'}`,String(move.ply)));}
         select.value=String(state.session.selectedPly);select.addEventListener('change',()=>void this.command({action:'select',ply:Number(select.value)}));label.append(select);root.append(label);
         const details=node('details');const header=node('summary','Move assessments by player');details.append(header);const table=node('table');table.innerHTML='<thead><tr><th scope="col">Assessment</th><th scope="col">White</th><th scope="col">Black</th></tr></thead>';const body=node('tbody');
         for(const grade of ['Best','Excellent','Good','Inaccuracy','Mistake','Blunder','Missed mate','Checkmate','Review']){if(!summary.counts.w[grade]&&!summary.counts.b[grade])continue;const row=node('tr');const th=node('th',grade);th.scope='row';row.append(th,node('td',String(summary.counts.w[grade]??0)),node('td',String(summary.counts.b[grade]??0)));body.append(row);}table.append(body);details.append(table);root.append(details);

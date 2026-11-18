@@ -1,10 +1,12 @@
 import type { Provider } from './types';
 
-export const FAILURE_REASONS = ['not-supported', 'download-required', 'downloading', 'connection', 'permission', 'missing-key', 'authentication', 'quota', 'model', 'http', 'timeout', 'invalid-format', 'unsupported-facts', 'context-limit', 'provider-error'] as const;
+export const FAILURE_REASONS = ['not-supported', 'generation-unsupported', 'download-required', 'downloading', 'connection', 'permission', 'missing-key', 'authentication', 'quota', 'model', 'http', 'timeout', 'invalid-format', 'unsupported-facts', 'context-limit', 'provider-error'] as const;
 export type FailureReason = typeof FAILURE_REASONS[number];
-export interface ProviderAttempt { provider: Provider; reason: FailureReason }
+export const PROVIDER_STAGES = ['availability','creation','generation','validation'] as const;
+export type ProviderStage = typeof PROVIDER_STAGES[number];
+export interface ProviderAttempt { provider: Provider; reason: FailureReason; stage?: ProviderStage }
 export class ProviderFailure extends Error {
-    constructor(readonly reason: FailureReason) { super(reason); }
+    constructor(readonly reason: FailureReason, readonly stage?: ProviderStage) { super(reason); }
 }
 export function failureReason(error: unknown): FailureReason {
     if (error instanceof ProviderFailure) return error.reason;
@@ -18,6 +20,7 @@ export function failureReason(error: unknown): FailureReason {
 const names: Record<Provider, string> = {chrome:'Chrome AI',ollama:'Ollama',gemini:'Gemini',openai:'OpenAI',groq:'Groq'};
 const explanations: Record<FailureReason, string> = {
     'not-supported':'is unavailable in this browser or device.',
+    'generation-unsupported':'could not generate this explanation with the supported text options. Try again or choose another provider.',
     'download-required':'needs its model downloaded in settings.',
     downloading:'is still downloading its model.',
     connection:'cannot be reached. Check its server or connection.',
@@ -33,11 +36,11 @@ const explanations: Record<FailureReason, string> = {
     'context-limit':'could not fit the explanation into its context window.',
     'provider-error':'could not complete the explanation. Run Test AI in settings.',
 };
-export const providerFailureText = (attempt: ProviderAttempt) => `${names[attempt.provider]} ${explanations[attempt.reason]}`;
+export const providerFailureText = (attempt: ProviderAttempt) => `${names[attempt.provider]}${attempt.stage ? ` (${attempt.stage})` : ''} ${explanations[attempt.reason]}`;
 export function isProviderAttempt(value: unknown): value is ProviderAttempt {
     if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
     const v = value as Record<string,unknown>;
-    return Object.keys(v).every(k => k === 'provider' || k === 'reason') && Object.hasOwn(names,String(v.provider)) && FAILURE_REASONS.includes(v.reason as FailureReason);
+    return Object.keys(v).every(k => k === 'provider' || k === 'reason' || k === 'stage') && Object.hasOwn(names,String(v.provider)) && FAILURE_REASONS.includes(v.reason as FailureReason) && (v.stage === undefined || PROVIDER_STAGES.includes(v.stage as ProviderStage));
 }
 export interface AiTestResult { provider: Provider | 'facts'; text: string; attempts: ProviderAttempt[] }
 export function isAiTestResult(value: unknown): value is AiTestResult {

@@ -61,12 +61,16 @@ it('accepts late opening metadata for a cached matching result and ignores stale
     update(1); expect(card.opening.textContent).toContain("King's Pawn");
     controller.stop(); controller.handle(event); expect(card.opening.hidden).toBe(true);
 });
-it('starts a queued whole-game sweep on typed completion after its text', () => {
+it('delegates whole-game work while a selected explanation remains pending', async () => {
     update(1); result(); card.reviewAI.click(); const ai=last(); result(ai,{},false);
     controller.handle({type:'REVIEW_TEXT',sessionId:session.id,requestId:ai.requestId,tabId:1,text:'Verified wording.'});
     card.reviewSweep.click(); expect(last().requestId).toBe(ai.requestId);
+    await Promise.resolve();
+    expect(send).toHaveBeenCalledWith({type:'REVIEW_RUN_CONTROL',sessionId:session.id,action:'resume'});
     progress({state:'ready',provider:'chrome'},ai);
-    expect(last()).toMatchObject({ply:2,background:true,ai:false});
+    expect(requests()).toHaveLength(2);
+    expect(requests().every(request=>!request.background)).toBe(true);
+    expect(card.explanation.textContent).toBe('Verified wording.');
 });
 it('collects problematic moves, displays visual cues, and attempts native selection from the issue list',async()=>{
     update(1); const first=last(); result(first,{feedback:{label:'Inaccuracy',summary:'First consequence.'}});
@@ -86,7 +90,9 @@ it('debounces rapid native navigation and explains only the final verified selec
     controller.update(position(2), snapshot(2));
     vi.advanceTimersByTime(179); expect(requests()).toHaveLength(0);
     vi.advanceTimersByTime(1); expect(requests()).toHaveLength(1);
-    expect(last()).toMatchObject({ply:2,ai:true,background:false});
+    expect(last()).toMatchObject({ply:2,ai:false,background:false,profile:'quick'});
+    expect(card.status.textContent).toBe('Checking this move…');
+    expect(card.reviewExplanationStatus.textContent).toBe('');
 });
 it('retries an AI fallback when a move is revisited and invalidates successful wording on settings refresh', () => {
     update(1); result(); update(2); result(); update(1);
@@ -101,21 +107,22 @@ it('retries an AI fallback when a move is revisited and invalidates successful w
     expect(card.explanation.textContent).not.toBe('Validated AI wording.');
 });
 it('ignores status wording and mismatched completion events while an AI request remains pending', () => {
-    update(1); result(last(),{},false); const selected = last();
+    update(1); result(); card.reviewAI.click(); result(last(),{},false); const selected = last();
     card.reviewSweep.click();
     controller.handle({type:'REVIEW_STATUS',sessionId:session.id,requestId:selected.requestId,tabId:1,text:'Explanation by Chrome AI'});
     controller.handle({type:'REVIEW_EXPLANATION_STATE',sessionId:session.id,requestId:selected.requestId,tabId:1,ply:2,fen:fenAt(session,2),state:'ready',provider:'chrome'});
     controller.handle({type:'REVIEW_EXPLANATION_STATE',sessionId:session.id,requestId:selected.requestId,tabId:1,ply:1,fen:fenAt(session,2),state:'ready',provider:'chrome'});
-    expect(requests()).toHaveLength(1);
+    expect(requests()).toHaveLength(2);expect(card.reviewAI.disabled).toBe(true);
     progress({state:'fallback',provider:'facts'},selected);
-    expect(last()).toMatchObject({ply:2,ai:false,background:true});
+    expect(card.reviewAI.disabled).toBe(false);
+    expect(requests().every(request=>!request.background)).toBe(true);
 });
 afterEach(() => { controller.stop(); vi.useRealTimers(); document.body.replaceChildren(); });
 
 describe('review follows the website board', () => {
     it('waits for the verified native selection and never creates another chessboard', () => {
         expect(requests()).toHaveLength(0);
-        update(2); expect(last()).toMatchObject({ ply: 2, ai: true, background: false });
+        update(2); expect(last()).toMatchObject({ ply: 2, ai: false, background: false,profile:'quick' });
         result();
         expect(card.heading.textContent).toBe('Pawn to E5 · Good');
         expect(card.explanation.textContent).toBe("Black's move stayed close to the previous evaluation in this search.");
@@ -125,7 +132,7 @@ describe('review follows the website board', () => {
     it('cancels rapid move changes and ignores stale results', () => {
         update(1); const stale = last(); update(2); const current = last();
         expect(current.requestId).not.toBe(stale.requestId);
-        expect(send).toHaveBeenCalledWith({ type: 'CANCEL' });
+        expect(send).toHaveBeenCalledWith({ type: 'CANCEL',requestId:stale.requestId });
         result(stale); expect(card.heading.textContent).toBe('Ready to study');
         result(current); expect(card.heading.textContent).toBe('Pawn to E5 · Good');
     });
@@ -153,13 +160,13 @@ describe('review follows the website board', () => {
         expect(card.explanation.textContent).toBe('');
     });
     it('reuses cached grades and redraws on rotation without another search', () => {
-        update(1); result(last(),{},false);
+        update(1); result();card.reviewAI.click();result(last(),{},false);
         controller.handle({type:'REVIEW_TEXT',sessionId:session.id,requestId:last().requestId,tabId:1,text:'A verified AI explanation.',provider:'Chrome AI'});
         progress({state:'ready',provider:'chrome'});
         update(2); result();
-        update(1); expect(requests()).toHaveLength(2); expect(card.heading.textContent).toBe('Pawn to E4 · Good');
+        update(1); expect(requests()).toHaveLength(3); expect(card.heading.textContent).toBe('Pawn to E4 · Good');
         controller.update(position(1, 'black'), snapshot(1));
-        expect(layers.mock.calls.at(-1)?.[1]).toBe('black'); expect(requests()).toHaveLength(2);
+        expect(layers.mock.calls.at(-1)?.[1]).toBe('black'); expect(requests()).toHaveLength(3);
     });
     it('shows only played-move review cues and keeps analysis preferences untouched', () => {
         update(1); result();
@@ -210,13 +217,22 @@ describe('optional whole-game and AI work', () => {
         controller.handle({ type: 'REVIEW_TEXT', sessionId: session.id, requestId: retry.requestId, tabId: 1, text: 'Retry succeeded.' });
         expect(card.explanation.textContent).toBe('Retry succeeded.');
     });
-    it('analyzes unselected moves without navigating or changing displayed feedback', () => {
-        update(1); result(); const fen = board.innerHTML;
-        card.reviewSweep.click(); expect(last()).toMatchObject({ ply: 2, background: true });
-        result(); expect(last()).toMatchObject({ ply: 3, background: true });
-        expect(card.heading.textContent).toBe('Pawn to E4 · Good'); expect(board.innerHTML).toBe(fen);
-        card.reviewSweep.click(); expect(card.reviewSweep.textContent).toBe('Analyze whole game');
-        expect(send).toHaveBeenCalledWith({ type: 'CANCEL' });
+    it('hydrates background results without navigating or replacing selected feedback', async () => {
+        update(1); result(); const fen = board.innerHTML,feedback=card.explanation.textContent;
+        const after=evaluation([{uci:'g1f3',san:'Nf3',pv:'Nf3',score:0}]);
+        let running=true;
+        send.mockImplementation(async message=>{
+            if(message.type==='GET_REVIEW_STATE')return {state:{session,assessments:[{ply:2,after,feedback:{label:'Good',summary:'Background result.'}}],preferences:{level:'beginner',side:'both',visuals:true},attempts:[],running,updatedAt:1}};
+            if(message.type==='REVIEW_RUN_CONTROL'&&message.action==='pause')running=false;
+            return {};
+        });
+        card.reviewSweep.click();await vi.advanceTimersByTimeAsync(0);
+        expect(send).toHaveBeenCalledWith({type:'REVIEW_RUN_CONTROL',sessionId:session.id,action:'resume'});
+        expect(card.heading.textContent).toBe('Pawn to E4 · Good');expect(card.explanation.textContent).toBe(feedback);expect(board.innerHTML).toBe(fen);
+        expect(requests()).toHaveLength(1);
+        card.reviewSweep.click();await vi.advanceTimersByTimeAsync(0);
+        expect(send).toHaveBeenCalledWith({type:'REVIEW_RUN_CONTROL',sessionId:session.id,action:'pause'});
+        expect(card.reviewSweep.textContent).toBe('Analyze whole game');
     });
     it('pauses a sweep before AI and keeps facts when AI is unavailable', () => {
         update(1); result(); card.reviewSweep.click(); const sweep = last();
@@ -232,7 +248,8 @@ describe('optional whole-game and AI work', () => {
         update(1); result(); card.reviewAI.click(); result(last(),{},false);
         controller.handle({ type: 'REVIEW_TEXT', sessionId: session.id, requestId: last().requestId, tabId: 1, text: 'Short optional wording.', provider: 'Chrome AI' });
         expect(card.explanation.textContent).toBe('Short optional wording.');
-        expect(card.reviewAIText.textContent).toBe('Explanation by Chrome AI');
+        expect(card.reviewAIText.textContent).toContain('AI coaching by Chrome AI');
+        expect(card.reviewAIText.closest('details')).toBe(card.details);
     });
     it('clears and cancels on exit and replaces sessions without stale feedback', () => {
         update(1); const old = last(); controller.stop(); result(old);
@@ -285,17 +302,17 @@ it('makes cue meaning visible, preserves it with AI, and clears it on selection 
     controller.stop(); expect(card.reviewControls.hidden).toBe(true);
 });
 
-it('releases the engine for a sweep while a selected explanation continues', () => {
-    update(1); const selected=last(); result(selected,{},false);
+it('accepts selected wording after the engine completes and background state advances', async () => {
+    update(1);result();card.reviewAI.click();const selected=last();result(selected,{},false);
     card.reviewSweep.click();
     controller.handle({type:'REVIEW_ENGINE_COMPLETE',sessionId:session.id,requestId:selected.requestId,tabId:1,ply:1});
-    expect(last()).toMatchObject({ply:2,ai:false,background:true});
-    const background=last();
+    const after=evaluation([{uci:'g1f3',san:'Nf3',pv:'Nf3',score:0}]);
+    send.mockImplementation(async message=>message.type==='GET_REVIEW_STATE'?{state:{session,assessments:[{ply:2,after,feedback:{label:'Good',summary:'Background result.'}}],preferences:{level:'beginner',side:'both',visuals:true},attempts:[],running:true,updatedAt:1}}:{});
+    await controller.syncState();
     controller.handle({type:'REVIEW_TEXT',sessionId:session.id,requestId:selected.requestId,tabId:1,text:'Selected explanation stays current.'});
     progress({state:'ready',provider:'chrome'},selected);
     expect(card.explanation.textContent).toBe('Selected explanation stays current.');
-    result(background);
-    expect(last()).toMatchObject({ply:3,background:true});
+    expect(requests()).toHaveLength(2);expect(card.reviewSweep.textContent).toBe('Pause analysis');
 });
 
 it('keeps practice hidden from normal review, checks a legal alternative, and records an independent solution',async()=>{
@@ -323,5 +340,5 @@ it('restores results for the same game without mixing other games',async()=>{
     controller.start(session);update(1);await Promise.resolve();await Promise.resolve();
     expect(card.reviewIssues.querySelector('summary')!.textContent).toContain('(0)');
     expect(card.learning.element.querySelector<HTMLSelectElement>('[data-level]')!.value).toBe('advanced');
-    expect(card.reviewProgress.textContent).toContain('1 of 3');
+    expect(card.reviewProgress.textContent).toContain('1/3');
 });

@@ -77,6 +77,8 @@ it('separates execution credentials from panel preferences', () => {
     expect(isBackgroundRequest({ type: 'SAVE_SETTINGS', settings: DEFAULT_SETTINGS, credentials: { unknown: 'secret' } })).toBe(false);
     const job = { ...analysis, type: 'ENGINE_START', target: 'offscreen', tabId: 1, manual: false, settings: { ...DEFAULT_SETTINGS, keys: { gemini: 'secret' } } };
     expect(isOffscreenCommand(job)).toBe(true);
+    for (const level of ['beginner','intermediate','advanced']) expect(isOffscreenCommand({...job,level})).toBe(true);
+    expect(isOffscreenCommand({...job,level:'invented'})).toBe(false);
     expect(isOffscreenCommand({ ...job, settings: { ...DEFAULT_SETTINGS, keys: { unknown: 'secret' } } })).toBe(false);
 });
 it('authenticates identity, top frame, HTTPS origins and extension execution contexts', () => {

@@ -60,3 +60,15 @@ it('shows selected verified pieces and makes unknown capture history explicit', 
     card.clear('Next move'); expect(card.positionFacts.hidden).toBe(true);
     expect(card.positionFacts.textContent).toBe('');
 });
+
+it('keeps advanced review controls and attribution secondary without losing completion feedback',()=>{
+    const card=new Card(()=>{});document.body.append(card.host);card.setReviewMode(true);
+    expect(card.reviewSweep.closest('details')?.querySelector('summary')?.textContent).toBe('Review controls');
+    expect(card.reviewSweep.closest('details')?.open).toBe(false);
+    card.setReviewProgress(12,12,false,'Review complete: 12/12');
+    expect(card.reviewSweep.hidden).toBe(true);expect(card.reviewProgress.textContent).toContain('Review complete');
+    card.showReviewAI('A practical lesson.','Chrome AI');
+    expect(card.explanation.textContent).toBe('A practical lesson.');expect(card.reviewAIText.closest('details')).toBe(card.details);
+    expect(card.reviewAIText.textContent).toContain('AI coaching');expect(card.evaluation.hidden).toBe(true);
+    card.setReviewMode(false);expect(card.evaluation.hidden).toBe(false);
+});

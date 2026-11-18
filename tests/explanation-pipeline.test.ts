@@ -8,7 +8,7 @@ const config = () => ({ ...structuredClone(DEFAULT_SETTINGS), keys: { gemini: 't
 const valid = JSON.stringify({ leadFactId: 'recommended.move', toneVariant: 'direct' });
 const ollama = (text = valid) => new Response(JSON.stringify({ response: text }) + '\n');
 function chromePlan(text: string) {
-    const create = vi.fn(async () => ({ destroy: vi.fn(), promptStreaming: () => new ReadableStream({ start(c) { c.enqueue(text); c.close(); } }) }));
+    const create = vi.fn(async () => ({ destroy: vi.fn(), prompt: async () => text }));
     vi.stubGlobal('LanguageModel', { availability: async () => 'available', create });
     return create;
 }
@@ -79,6 +79,6 @@ it('bounds the entire automatic provider chain and publishes one factual fallbac
     vi.stubGlobal('fetch', vi.fn(() => new Promise(() => {})));
     const output = vi.fn();
     const work = explain(config(), DEFAULT_POSITION, result, new AbortController().signal, output);
-    await vi.advanceTimersByTimeAsync(EXPLANATION_BUDGET_MS - 1); expect(output).not.toHaveBeenCalled();
-    await vi.advanceTimersByTimeAsync(1); expect(await work).toBe('facts'); expect(output).toHaveBeenCalledOnce();
+    await vi.advanceTimersByTimeAsync(74999); expect(output).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(EXPLANATION_BUDGET_MS - 74999); expect(await work).toBe('facts'); expect(output).toHaveBeenCalledOnce();
 });

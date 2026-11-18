@@ -27,7 +27,7 @@ it('propagates cancellation and provider errors', async () => {
 it('prefers ready Chrome AI and destroys its session without contacting remote providers', async () => {
     const destroy = vi.fn(), fetch = vi.fn(); vi.stubGlobal('fetch', fetch);
     vi.stubGlobal('LanguageModel', { availability: async () => 'available', create: async () => ({ destroy,
-        promptStreaming: () => new ReadableStream({ start(c) { c.enqueue('{"leadFactId":"recommended.move",'); c.enqueue('"toneVariant":"direct"}'); c.close(); } }),
+        prompt: async () => '{"leadFactId":"recommended.move","toneVariant":"direct"}',
     }) });
     const output: string[] = [];
     expect(await explain(settings(), DEFAULT_POSITION, result, new AbortController().signal, text => output.push(text))).toBe('chrome');
@@ -71,7 +71,7 @@ it('times out a stuck Chrome API and continues to Ollama', async () => {
     vi.useFakeTimers(); vi.stubGlobal('LanguageModel', { availability: () => new Promise(() => {}) });
     vi.stubGlobal('fetch', vi.fn(async () => response(JSON.stringify({response:JSON.stringify({leadFactId:'recommended.move',toneVariant:'direct'})})+'\n')));
     const promise = explain(settings(), DEFAULT_POSITION, result, new AbortController().signal, () => {});
-    await vi.advanceTimersByTimeAsync(12001); expect(await promise).toBe('ollama');
+    await vi.advanceTimersByTimeAsync(30000); expect(await promise).toBe('ollama');
 });
 it('migrates legacy preferences to automatic mode without retaining credentials', () => {
     const migrated = settingsFrom({ provider: 'openai', models: { ollama: 'my-model' }, keys: { openai: 'saved-key' } });
@@ -102,8 +102,8 @@ it('reports invalid plans and skips cloud inference without permission', async (
     expect(await explain(config, DEFAULT_POSITION, result, new AbortController().signal, () => {}, () => {}, undefined, report)).toBe('facts');
     expect(fetch).toHaveBeenCalledTimes(2);
     expect(report.mock.calls.map(([value]) => value)).toEqual([
-        { code: 'PROVIDER_UNAVAILABLE', provider: 'chrome',reason:'not-supported' }, { code: 'INVALID_PROVIDER_RESPONSE', provider: 'ollama',reason:'invalid-format' },
-        { code: 'PROVIDER_UNAVAILABLE', provider: 'gemini',reason:'permission' },
+        { code: 'PROVIDER_UNAVAILABLE', provider: 'chrome',reason:'not-supported',stage:'availability' }, { code: 'INVALID_PROVIDER_RESPONSE', provider: 'ollama',reason:'invalid-format',stage:'validation' },
+        { code: 'PROVIDER_UNAVAILABLE', provider: 'gemini',reason:'permission',stage:'generation' },
     ]);
     expect(JSON.stringify(report.mock.calls)).not.toContain('secret');
 });
@@ -134,15 +134,15 @@ it.each([['ollama', 25000], ['openai', 20000]] as const)('bounds a stuck %s tran
     await vi.advanceTimersByTimeAsync(milliseconds - 1); expect(complete).toBe(false);
     await vi.advanceTimersByTimeAsync(1); expect(await promise).toBe('facts');
 });
-it('clips collection at 600 characters and cancels the provider stream', async () => {
+it('rejects collection above 6000 characters and cancels the provider stream', async () => {
     const config = settings(); config.provider = 'ollama'; const cancel = vi.fn();
     const encoder = new TextEncoder();
     vi.stubGlobal('fetch', vi.fn(async () => new Response(new ReadableStream({
-        start(controller) { controller.enqueue(encoder.encode(JSON.stringify({ response: 'x'.repeat(1000) }) + '\n')); }, cancel,
+        start(controller) { controller.enqueue(encoder.encode(JSON.stringify({ response: 'x'.repeat(6001) }) + '\n')); }, cancel,
     }))));
     const output: string[] = [];
     expect(await explain(config, DEFAULT_POSITION, result, new AbortController().signal, text => output.push(text))).toBe('facts');
-    expect(cancel).toHaveBeenCalledTimes(2); expect(output).toHaveLength(1); expect(output[0]).not.toContain('xxxx');
+    expect(cancel).toHaveBeenCalledOnce(); expect(output).toHaveLength(1); expect(output[0]).not.toContain('xxxx');
 });
 it('includes a stuck permission check in the cloud deadline', async () => {
     vi.useFakeTimers(); const config = settings(); config.provider = 'gemini'; config.keys.gemini = 'private';
@@ -152,7 +152,7 @@ it('includes a stuck permission check in the cloud deadline', async () => {
     const promise = explain(config, DEFAULT_POSITION, result, new AbortController().signal, () => {}, () => {}, undefined, report);
     await vi.advanceTimersByTimeAsync(20000);
     expect(await promise).toBe('facts'); expect(fetch).not.toHaveBeenCalled();
-    expect(report).toHaveBeenCalledWith({ code: 'PROVIDER_UNAVAILABLE', provider: 'gemini',reason:'timeout' });
+    expect(report).toHaveBeenCalledWith({ code: 'PROVIDER_UNAVAILABLE', provider: 'gemini',reason:'timeout',stage:'generation' });
 });
 it('cancels a stalled permission check and ignores a late grant', async () => {
     const config = settings(); config.provider = 'groq'; config.keys.groq = 'private';
@@ -169,7 +169,7 @@ it('falls back locally when an analysis provider selects a castling side absent 
     const board=new Chess();for(const san of ['e4','c5','Nf3','g6','Nc3'])board.move(san);
     const evaluated=makeEvaluation([candidateFrom('info depth 17 score cp 20 pv b8c6 d2d4 c5d4 f3d4 f8g7 c1e3 g8f6 f1c4 e8g8 c4b3',board.fen())!.candidate]);
     const fetcher=vi.fn();vi.stubGlobal('fetch',fetcher);
-    vi.stubGlobal('LanguageModel',{availability:async()=> 'available',create:async()=>({destroy:vi.fn(),promptStreaming:()=>new ReadableStream({start(c){c.enqueue(JSON.stringify({leadFactId:'recommended.move',supportFactId:'recommended.castling.queenside',toneVariant:'direct'}));c.close();}})})});
+    vi.stubGlobal('LanguageModel',{availability:async()=> 'available',create:async()=>({destroy:vi.fn(),prompt:async()=>JSON.stringify({leadFactId:'recommended.move',supportFactId:'recommended.castling.queenside',toneVariant:'direct'})})});
     const output:string[]=[];
     expect(await explain({...settings(),provider:'chrome'},board.fen(),evaluated,new AbortController().signal,text=>output.push(text))).toBe('facts');
     expect(output.join('')).toContain('castle kingside with O-O');

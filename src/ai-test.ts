@@ -9,7 +9,7 @@ export async function testExplanation(settings: ExecutionSettings, signal: Abort
     const sample = evaluation([{uci:'g1f3',san:'Nf3',pv:'Nf3 d5',score:0,uciPv:['g1f3','d7d5']}]);
     const attempts: ProviderAttempt[] = []; let text = '';
     const provider = await explain(settings, DEFAULT_POSITION, sample, signal, delta => {text += delta;}, () => {}, {summary:'',mode:'analysis'}, value => {
-        if (value.provider && value.reason && attempts.length < 10 && !attempts.some(a=>a.provider===value.provider && a.reason===value.reason)) attempts.push({provider:value.provider,reason:value.reason});
+        if (value.provider && value.reason && attempts.length < 10 && !attempts.some(a=>a.provider===value.provider && a.reason===value.reason && a.stage===value.stage)) attempts.push({provider:value.provider,reason:value.reason,stage:value.stage});
     }, {cache:false});
     signal.throwIfAborted();
     return {provider, text, attempts};

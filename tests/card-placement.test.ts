@@ -171,3 +171,47 @@ it('rechecks sticky native widgets on scroll and moves guidance into safe flow',
     expect(main.nextElementSibling).toBe(placement.slot);
     expect(placementCollisions(host)).toEqual([]);
 });
+
+it('can allocate an independent layout column on the right or left of the board', () => {
+    const right = fixture(1400);
+    right.adjacent.style.position = 'absolute';
+    const rightOriginal = document.createElement.bind(document);
+    const rightCreate = vi.spyOn(document, 'createElement');
+    rightCreate.mockImplementation(((tag: string, options?: ElementCreationOptions) => {
+        const element = rightOriginal(tag, options);
+        if (tag === 'div' && element !== right.placement.slot) bounds(element, () => rect(600, 0, 800, 500));
+        return element;
+    }) as typeof document.createElement);
+    bounds(document.body, () => rect(0, 0, 1400, 900));
+    bounds(right.main, () => rect(600, 0, 500, 500));
+    bounds(right.board, () => rect(600, 0, 500, 500));
+    bounds(right.placement.slot, () => right.placement.slot.parentElement?.hasAttribute('data-kibitz-layout')
+        ? rect(1116, 0, 284, 200) : rect(0, 600, 560, 200));
+    bounds(right.host, () => right.placement.slot.getBoundingClientRect());
+    right.placement.attach(right.board, false);
+    expect(document.querySelector('[data-kibitz-layout]')).not.toBeNull();
+    expect(right.placement.slot.dataset.kibitzSide).toBe('right');
+    rightCreate.mockRestore();
+    right.placement.destroy();
+
+    document.body.replaceChildren();
+    const left = fixture(1400);
+    left.adjacent.style.position = 'absolute';
+    const leftOriginal = document.createElement.bind(document);
+    const leftCreate = vi.spyOn(document, 'createElement');
+    leftCreate.mockImplementation(((tag: string, options?: ElementCreationOptions) => {
+        const element = leftOriginal(tag, options);
+        if (tag === 'div' && element !== left.placement.slot) bounds(element, () => rect(0, 0, 1100, 500));
+        return element;
+    }) as typeof document.createElement);
+    bounds(document.body, () => rect(0, 0, 900, 900));
+    bounds(left.main, () => rect(600, 0, 500, 500));
+    bounds(left.board, () => rect(600, 0, 500, 500));
+    bounds(left.placement.slot, () => left.placement.slot.parentElement?.hasAttribute('data-kibitz-layout')
+        ? rect(324, 0, 276, 200) : rect(0, 600, 560, 200));
+    bounds(left.host, () => left.placement.slot.getBoundingClientRect());
+    left.placement.attach(left.board, false);
+    expect(document.querySelector('[data-kibitz-layout]')).not.toBeNull();
+    expect(left.placement.slot.dataset.kibitzSide).toBe('left');
+    leftCreate.mockRestore();
+});

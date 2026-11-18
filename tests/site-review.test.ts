@@ -15,13 +15,17 @@ describe('native review snapshots', () => {
     it('serializes independently and reads a completed Chess.com selected ply', () => {
         const game = session();
         document.body.innerHTML = '<wc-chess-board class="flipped"></wc-chess-board>';
-        Object.assign(document.querySelector('wc-chess-board')!, { game: {
+        const native = {
             getFEN: () => game.moves[0].afterFen, getSelectedNode: () => ({ ply: 1 }), getHistorySANs: () => ['e4'],
             getPGN: () => '[Link "https://www.chess.com/game/live/1234"]\n[Result "1-0"]\n\n1. e4 e5 1-0',
-        } });
+        };
+        Object.assign(document.querySelector('wc-chess-board')!, { game: native });
         expect(execute(source.url)).toMatchObject({ allowed: true, fen: game.moves[0].afterFen, ply: 1, orientation: 'black', gameId: '1234' });
         expect(execute('https://www.chess.com/game/live/5678').allowed).toBe(false);
         document.body.insertAdjacentHTML('beforeend', '<div class="clock-component clock-player-turn"></div>');
+        // A verified final export outranks a lingering website clock animation.
+        expect(execute(source.url).allowed).toBe(true);
+        native.getPGN = () => '[Link "https://www.chess.com/game/live/1234"]\n[Result "*"]\n\n1. e4 *';
         expect(execute(source.url).allowed).toBe(false);
     });
     it('reads the actual selected Lichess analysis node and relative custom root ply', () => {

@@ -96,8 +96,9 @@ it('routes Test AI through offscreen using saved private settings without starti
     expect(await send({type:'TEST_AI'},page)).toMatchObject({error:'Unauthorized request.'});
 });
 it('routes the request to offscreen with the correct command and private settings', async () => {
+    local.reviewPreferencesV2 = {level:'advanced',side:'both',visuals:true};
     await send(request('one'));
-    await vi.waitFor(() => expect(runtimeSend).toHaveBeenCalledWith(expect.objectContaining({ type: 'ENGINE_START', target: 'offscreen', requestId: 'one', tabId: 12 })));
+    await vi.waitFor(() => expect(runtimeSend).toHaveBeenCalledWith(expect.objectContaining({ type: 'ENGINE_START', target: 'offscreen', requestId: 'one', tabId: 12, level: 'advanced' })));
     expect(tabSend).not.toHaveBeenCalled();
 });
 it('checks cloud host permissions for the trusted offscreen document only', async () => {
@@ -110,6 +111,7 @@ it('checks cloud host permissions for the trusted offscreen document only', asyn
     expect(respond).toHaveBeenNthCalledWith(1, expect.objectContaining({ error: 'Unauthorized request.' })); expect(respond).toHaveBeenNthCalledWith(2, expect.objectContaining({ error: 'Invalid request.' })); expect(chrome.permissions.contains).toHaveBeenCalledTimes(1);
 });
 it('reads only the active board FEN through the isolated page API reader', async () => {
+    vi.mocked(chrome.scripting.executeScript).mockResolvedValue([{ result: { url: activeUrl, pageUrl: activeUrl, allowed: true, fen: new Chess().fen(), orientation: 'white', completed: false } }] as never);
     expect(await send({ type: 'POSITION_REQUEST' })).toEqual({ fen: new Chess().fen() });
     expect(chrome.scripting.executeScript).toHaveBeenCalledWith(expect.objectContaining({ target: { tabId: 12 }, world: 'MAIN' }));
 });
@@ -145,14 +147,14 @@ it('routes review directly to its source page without a panel and pauses hidden 
     const source = { ...page, url: activeUrl };
     const saved = sessionFromPgn('[Result "1-0"]\n\n1. e4 e5 1-0', { url: activeUrl, gameId: 'abcdefgh', tabId: 12 });
     session['siteReview:12'] = saved;
-    vi.mocked(chrome.scripting.executeScript).mockResolvedValue([{ result: { url: activeUrl, allowed: true, gameId: 'abcdefgh', fen: saved.moves[0].afterFen, ply: 1, orientation: 'white' } }] as never);
+    vi.mocked(chrome.scripting.executeScript).mockResolvedValue([{ result: { url: activeUrl, pageUrl: activeUrl, allowed: true, gameId: 'abcdefgh', fen: saved.moves[0].afterFen, ply: 1, orientation: 'white', completed: true } }] as never);
     const request = { type: 'REVIEW_ANALYZE', sessionId: saved.id, requestId: 'review-request', initialFen: saved.initialFen, moves: saved.moves.map(move => move.uci), ply: 1 };
     expect(await send(request, source)).toEqual({ ok: true });
     expect(runtimeSend).toHaveBeenCalledWith(expect.objectContaining({ type: 'REVIEW_START', manual: false, request: expect.objectContaining({ sessionId: saved.id }) }));
     listener({ target: 'background', manual: false, event: { type: 'REVIEW_STATUS', sessionId: 'wrong', requestId: 'review-request', tabId: 12, text: 'stale' } }, engine, () => {});
     listener({ target: 'background', manual: false, event: { type: 'REVIEW_STATUS', sessionId: saved.id, requestId: 'review-request', tabId: 12, text: 'current' } }, engine, () => {});
-    await vi.waitFor(() => expect(tabSend).toHaveBeenCalledOnce());
-    expect(tabSend).toHaveBeenCalledWith(12, expect.objectContaining({ text: 'current' }));
+    await vi.waitFor(() => expect(tabSend).toHaveBeenCalledWith(12, expect.objectContaining({ text: 'current' })));
+    expect(tabSend.mock.calls.some(([, event])=>event.text === 'stale')).toBe(false);
     onActivated();
     await vi.waitFor(() => expect(session.activeAnalysis).toBeUndefined());
     expect(tabSend).toHaveBeenCalledWith(12, expect.objectContaining({ type: 'REVIEW_ERROR', text: expect.stringContaining('paused') }));
@@ -171,15 +173,15 @@ it('serializes review restoration, validates the source page, and keeps deleted 
     expect((await send({type:'GET_LEARNING_HISTORY'},panel)).history).toEqual([]);
     activeUrl='https://lichess.org/ijklmnop';expect((await send({type:'GET_REVIEW_STATE'},panel)).state).toBeUndefined();
 });
-it('rejects a different move or session and allows whole-game jobs without navigating the board', async () => {
+it('rejects a different move or session and leaves whole-game jobs to the coordinator', async () => {
     activeUrl = 'https://lichess.org/abcdefgh'; const source = { ...page, url: activeUrl };
     const saved = sessionFromPgn('[Result "1-0"]\n\n1. e4 e5 1-0', { url: activeUrl, gameId: 'abcdefgh', tabId: 12 }); session['siteReview:12'] = saved;
-    vi.mocked(chrome.scripting.executeScript).mockResolvedValue([{ result: { url: activeUrl, allowed: true, gameId: 'abcdefgh', fen: saved.moves[0].afterFen, ply: 1, orientation: 'white' } }] as never);
+    vi.mocked(chrome.scripting.executeScript).mockResolvedValue([{ result: { url: activeUrl, pageUrl: activeUrl, allowed: true, gameId: 'abcdefgh', fen: saved.moves[0].afterFen, ply: 1, orientation: 'white', completed: true } }] as never);
     const request = { type: 'REVIEW_ANALYZE', sessionId: saved.id, requestId: 'review-request', initialFen: saved.initialFen, moves: saved.moves.map(move => move.uci), ply: 2 };
     expect((await send(request, source)).error).toContain('selected move changed');
     expect((await send({ ...request, sessionId: 'other' }, source)).error).toContain('Start review');
-    expect(await send({ ...request, background: true }, source)).toEqual({ ok: true });
-    expect(runtimeSend).toHaveBeenCalledWith(expect.objectContaining({ type: 'REVIEW_START', request: expect.objectContaining({ background: true, ply: 2 }) }));
+    expect((await send({ ...request, background: true }, source)).error).toContain('managed automatically');
+    expect(runtimeSend.mock.calls.some(([message])=>message.type === 'REVIEW_START')).toBe(false);
 });
 it('cancels a pending native validation before any review engine job can start', async () => {
     activeUrl = 'https://lichess.org/abcdefgh'; const source = { ...page, url: activeUrl };
@@ -195,7 +197,7 @@ it('cancels a pending native validation before any review engine job can start',
 });
 it('captures only a still-selected completed game and rejects navigation races', async () => {
     activeUrl = 'https://lichess.org/abcdefgh';
-    const snapshot = { url: activeUrl, gameId: 'abcdefgh', completed: true, result: '1-0', pgn: '[Result "1-0"]\n\n1. e4 e5 1-0' };
+    const snapshot = { url: activeUrl, pageUrl: activeUrl, gameId: 'abcdefgh', completed: true, result: '1-0', pgn: '[Result "1-0"]\n\n1. e4 e5 1-0' };
     vi.mocked(chrome.scripting.executeScript).mockResolvedValue([{ result: snapshot }] as never);
     const captured = await send({ type: 'CAPTURE_GAME' }, panel);
     expect(captured.session.source).toMatchObject({ gameId: 'abcdefgh', tabId: 12 });
@@ -203,6 +205,53 @@ it('captures only a still-selected completed game and rejects navigation races',
     vi.mocked(chrome.scripting.executeScript).mockImplementationOnce(async () => { activeUrl = 'https://lichess.org/ijklmnop'; return [{ result: snapshot }] as never; });
     const changed = await send({ type: 'CAPTURE_GAME' }, panel);
     expect(changed.error).toContain('changed');
+});
+it('captures a headerless Chess.com export and starts the whole-game queue', async () => {
+    activeUrl = 'https://www.chess.com/game/live/187450449798';
+    const snapshot = {url:activeUrl,pageUrl:activeUrl,canonicalGameUrl:activeUrl,gameId:'187450449798',completed:true,result:'0-1',pgn:'[Result "0-1"]\n\n1. f3 e5 2. g4 Qh4# 0-1'};
+    vi.mocked(chrome.scripting.executeScript).mockResolvedValue([{result:snapshot}] as never);
+    const response = await send({type:'CAPTURE_GAME'},panel);
+    expect(response.session).toMatchObject({result:'0-1',source:{gameId:'187450449798',tabId:12}});
+    expect(response.session.moves).toHaveLength(4);
+    await vi.waitFor(()=>expect(runtimeSend.mock.calls.some(([message])=>message.type==='REVIEW_START' && message.request.background===true)).toBe(true));
+});
+it('starts review on current Lichess routes and restores it across same-game analysis navigation', async () => {
+    activeUrl = 'https://lichess.org/game/abcdefghWXYZ/black';
+    const snapshot = {url:activeUrl,pageUrl:activeUrl,gameId:'abcdefgh',completed:true,result:'1-0',pgn:'[Result "1-0"]\n\n1. e4 e5 1-0'};
+    vi.mocked(chrome.scripting.executeScript).mockResolvedValue([{result:snapshot}] as never);
+    const captured = await send({type:'CAPTURE_GAME'},panel);
+    expect(captured.session.source).toMatchObject({gameId:'abcdefgh',url:'https://lichess.org/game/abcdefgh/black',canonicalGameUrl:'https://lichess.org/game/abcdefgh'});
+    expect(JSON.stringify(session['siteReview:12'])).not.toContain('WXYZ');
+    activeUrl = 'https://lichess.org/game/abcdefgh/black/analysis#1';
+    expect((await send({type:'GET_REVIEW_STATE'},panel)).state.session.id).toBe(captured.session.id);
+    activeUrl = 'https://lichess.org/abcdefgh/white';
+    expect((await send({type:'GET_REVIEW_STATE'},panel)).state.session.id).toBe(captured.session.id);
+    activeUrl = 'https://lichess.org/game/ijklmnop/black/analysis';
+    expect((await send({type:'GET_REVIEW_STATE'},panel)).state).toBeUndefined();
+});
+it('supplies captured SAN history to native Lichess navigation and verifies the selected result', async () => {
+    activeUrl = 'https://lichess.org/game/abcdefgh/white';
+    const saved = sessionFromPgn('[Result "1-0"]\n\n1. e4 e5 1-0',{url:activeUrl,gameId:'abcdefgh',tabId:12});
+    session['siteReview:12'] = saved;
+    vi.mocked(chrome.scripting.executeScript).mockImplementation(async (args:any)=>[{result:args.func.name === 'navigateNativeReview' ? {ok:true} : {url:activeUrl,pageUrl:activeUrl,gameId:'abcdefgh',completed:true,allowed:true,fen:saved.moves[0].afterFen,ply:1,orientation:'white'}}] as never);
+    expect(await send({type:'NATIVE_REVIEW_NAVIGATE',direction:'select',ply:1},{...page,url:activeUrl})).toEqual({ok:true});
+    expect(chrome.scripting.executeScript).toHaveBeenCalledWith(expect.objectContaining({world:'MAIN',args:[expect.objectContaining({gameId:'abcdefgh',initialFen:saved.initialFen,moves:['e4','e5'],ply:1})]}));
+});
+it.each(['moves','result','url'])('rejects capture when %s changes between native reads', async change => {
+    activeUrl = 'https://www.chess.com/game/live/187450449798';
+    const snapshot = {url:activeUrl,pageUrl:activeUrl,canonicalGameUrl:activeUrl,gameId:'187450449798',completed:true,result:'0-1',pgn:'[Result "0-1"]\n\n1. e4 e5 0-1'};
+    vi.mocked(chrome.scripting.executeScript)
+        .mockResolvedValueOnce([{result:snapshot}] as never)
+        .mockImplementationOnce(async()=>{
+            if(change==='url')activeUrl='https://www.chess.com/game/live/1234';
+            const fresh = {...snapshot};
+            if(change==='moves')fresh.pgn='[Result "0-1"]\n\n1. d4 d5 0-1';
+            if(change==='result'){fresh.result='1-0';fresh.pgn='[Result "1-0"]\n\n1. e4 e5 1-0';}
+            return [{result:fresh}] as never;
+        });
+    const response=await send({type:'CAPTURE_GAME'},panel);
+    expect(response.error).toContain('changed');
+    expect(session['siteReview:12']).toBeUndefined();
 });
 it('keeps manual analysis active until its typed explanation completion is delivered', async () => {
     const post = connectPanel(); await send(request('manual'), panel);

@@ -46,7 +46,7 @@ async function explainPosition(options: {
     const { controller, progress } = options;
     const attempts: ProviderAttempt[] = [];
     const report: DiagnosticReporter = value => {
-        if (value.provider && value.reason && attempts.length < 10 && !attempts.some(a=>a.provider===value.provider && a.reason===value.reason)) attempts.push({provider:value.provider,reason:value.reason});
+        if (value.provider && value.reason && attempts.length < 10 && !attempts.some(a=>a.provider===value.provider && a.reason===value.reason && a.stage===value.stage)) attempts.push({provider:value.provider,reason:value.reason,stage:value.stage});
         options.report(value);
     };
     progress({ state: 'pending' });
@@ -54,7 +54,7 @@ async function explainPosition(options: {
         report(diagnostic('EXPLANATION_TIMEOUT'));
         progress({ state: 'failed', attempts });
         controller.abort();
-    }, 65000);
+    }, 80000);
     try {
         const facts = await options.prepare();
         controller.signal.throwIfAborted();
@@ -85,7 +85,7 @@ async function runReview(job: ReviewJob) {
     try {
         emit({ ...base, type: 'REVIEW_STATUS', text: 'Comparing the move with Stockfish…' });
         const result = await reviewer.analyze(request, controller.signal, preliminary => {
-            if (!request.attempt) emit({...base,type:'REVIEW_RESULT',ply:request.ply,before:preliminary.before,after:preliminary.after,feedback:preliminary.feedback,pendingConfirmation:true});
+            if (!request.attempt) emit({...base,type:'REVIEW_RESULT',ply:request.ply,before:preliminary.before,after:preliminary.after,feedback:preliminary.feedback,profile:preliminary.profile,refinement:preliminary.refinement,pendingConfirmation:true});
         });
         if (request.attempt && result.feedback && result.move) {
             const feedback = result.feedback;
@@ -96,12 +96,18 @@ async function runReview(job: ReviewJob) {
                 uncertain, accepted: !uncertain && !losingMate && feedback.label !== 'Missed mate' && (feedback.lossWinPercent ?? 0) <= 2 });
             return;
         }
+        if (result.profile === 'quick' && (request.background || request.ai === false)) {
+            emit({...base,type:'REVIEW_RESULT',ply:request.ply,before:result.before,after:result.after,feedback:result.feedback,profile:result.profile,refinement:result.refinement});
+            if (current?.id === request.requestId) current = undefined;
+            emit({...base,type:'REVIEW_ENGINE_COMPLETE',ply:request.ply});
+            return;
+        }
         const reviewFacts: ReviewFacts | undefined = result.feedback ? { summary: result.feedback.summary, level: request.level, provisional: result.feedback.provisional, label: result.feedback.label, lossCp: result.feedback.lossCp, playedMove: result.move?.san, before: result.before, history: { sessionId: request.sessionId, initialFen: request.initialFen, moves: request.moves, ply: request.ply } } : undefined;
         const feedback = result.feedback && reviewFacts ? { ...result.feedback, summary: renderExplanation(buildExplanationFacts(result.fen, result.after, reviewFacts)) } : result.feedback;
         const history = { sessionId: request.sessionId, initialFen: request.initialFen, moves: request.moves, ply: request.ply };
         const opening = cachedOpeningContext(result.fen, history, undefined);
         if (reviewFacts) reviewFacts.opening = opening;
-        emit({ ...base, type: 'REVIEW_RESULT', ply: request.ply, before: result.before, after: result.after, advice: job.nativeEvaluation, feedback, opening });
+        emit({ ...base, type: 'REVIEW_RESULT', ply: request.ply, before: result.before, after: result.after, advice: job.nativeEvaluation, feedback, opening, profile:result.profile,refinement:result.refinement });
         // Release Stockfish while the selected explanation continues independently.
         if (current?.id === request.requestId) current = undefined;
         emit({ ...base, type: 'REVIEW_ENGINE_COMPLETE', ply: request.ply });
@@ -145,7 +151,7 @@ async function run(job: EngineJob) {
             prepare: async () => {
                 const strategic = analysisEvidence(fen, result);
                 const analysisOpening = strategic?.fianchettos.length ? await metadata(loadAnalysisOpeningContext(fen, result.bestMove, controller.signal, strategic.pv.map(s => s.uci)), {}, controller.signal) : undefined;
-                return { summary: '', mode: 'analysis', analysisOpening };
+                return { summary: '', mode: 'analysis', analysisOpening, level: job.level };
             },
             progress: state => emit({ ...base, type: 'EXPLANATION_STATE', fen, ...state }),
             commit: textDelta => emit({ ...base, type: 'STREAM_CHUNK', textDelta, isComplete: true }),
@@ -163,6 +169,12 @@ chrome.runtime.onMessage.addListener((message: unknown, sender, respond) => {
         testController?.abort(); testController = new AbortController();
         void testExplanation(message.settings,testController.signal).then(test => respond({test}), () => respond({error:'AI test could not complete. Try again.'}));
         return true;
+    }
+    if (message.type === 'REVIEW_CANCEL') {
+        reviewControllers.get(message.requestId)?.abort();
+        reviewControllers.delete(message.requestId);
+        if (current?.id === message.requestId) { current.controller.abort(); engine.cancel(); current = undefined; }
+        respond({ok:true});
     }
     if (message.type === 'ENGINE_CANCEL') { cancel(); respond({ ok: true }); }
     if (message.type === 'ENGINE_START') { void run(message); respond({ ok: true }); }

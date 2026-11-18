@@ -1,5 +1,5 @@
 import type { Provider } from './types';
-import { providerFailureText, type ProviderAttempt } from './provider-failures';
+import type { ProviderAttempt } from './provider-failures';
 
 export type ExplanationProgress = (
     | { state: 'pending'; provider?: never }
@@ -15,6 +15,6 @@ export const PROVIDER_NAMES: Record<Provider | 'facts', string> = {
 export function explanationStatus(progress: ExplanationProgress): string {
     if (progress.state === 'pending') return 'Preparing an AI explanation…';
     if (progress.state === 'failed') return 'AI explanation unavailable. Verified feedback is still available.';
-    if (progress.state === 'fallback') return `${progress.attempts?.map(providerFailureText).join(' ') || 'No AI provider completed a verified explanation.'} Showing verified chess facts.`;
+    if (progress.state === 'fallback') return 'AI explanation unavailable. Showing verified feedback.';
     return `Explained by ${PROVIDER_NAMES[progress.provider]}`;
 }

@@ -3,6 +3,7 @@ import type { Evaluation } from './types';
 /** Kibitz v2: Lichess-inspired chances, not a prediction of an individual's result. */
 export const SCORING_VERSION = 2;
 export const SEARCH_PROFILES = {
+    quick: { id: 'stockfish-17.1-lite:300:1:v2', movetime: 300, multiPV: 1 },
     standard: { id: 'stockfish-17.1-lite:1500:3:v2', movetime: 1500, multiPV: 3 },
     confirm: { id: 'stockfish-17.1-lite:5000:3:v2', movetime: 5000, multiPV: 3 },
 } as const;

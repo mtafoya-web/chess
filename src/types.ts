@@ -1,5 +1,6 @@
 import type { Diagnostic } from './diagnostics';
 import type { ExplanationProgress } from './explanation-state';
+import type { LearningLevel } from './review-scoring';
 export interface MoveAnalysisRequest{
     type: 'ANALYSIS_REQUEST';
     fen: string;
@@ -26,13 +27,13 @@ export interface AnalysisStreamChunk {
 export type CloudProvider = 'gemini' | 'openai' | 'groq';
 export type RemoteProvider = 'ollama' | CloudProvider;
 export type Provider = 'chrome' | RemoteProvider;
-export interface Settings { provider: 'auto' | Provider; cloudProvider: CloudProvider; models: Record<RemoteProvider, string>; analysisSource?: 'auto' | 'local' }
+export interface Settings { provider: 'auto' | Provider; cloudProvider: CloudProvider; models: Record<RemoteProvider, string>; analysisSource?: 'auto' | 'local'; autoReviewFinishedGames?: boolean }
 export type ApiKeys = Partial<Record<CloudProvider, string>>;
 export type ProviderCredentials = ApiKeys;
 /** Execution-only settings; never persist or return these to the panel. */
 export interface ExecutionSettings extends Settings { keys: ApiKeys }
 export const DEFAULT_SETTINGS: Settings = {
-    provider: 'auto', cloudProvider: 'gemini', models: { ollama: 'qwen3:4b', gemini: 'gemini-2.5-flash', openai: 'gpt-4.1-mini', groq: 'llama-3.3-70b-versatile' }, analysisSource: 'auto',
+    provider: 'auto', cloudProvider: 'gemini', models: { ollama: 'qwen3:4b', gemini: 'gemini-2.5-flash', openai: 'gpt-4.1-mini', groq: 'llama-3.3-70b-versatile' }, analysisSource: 'auto', autoReviewFinishedGames: true,
 };
 export const ORIGINS: Record<RemoteProvider, string> = {
     ollama: 'http://localhost:11434/*', gemini: 'https://generativelanguage.googleapis.com/*',
@@ -45,10 +46,11 @@ export type AnalysisEvent =
     | ({ type: 'EXPLANATION_STATE'; requestId: string; tabId: number; fen: string } & ExplanationProgress)
     | { type: 'ENGINE_RESULT'; requestId: string; tabId: number; result: Evaluation }
     | { type: 'STATUS' | 'ERROR'; requestId: string; tabId: number; text: string; diagnostic?: Diagnostic };
-export interface EngineJob { target: 'offscreen'; type: 'ENGINE_START'; fen: string; requestId: string; tabId: number; manual: boolean; settings: ExecutionSettings; nativeEvaluation?: Evaluation }
+export interface EngineJob { target: 'offscreen'; type: 'ENGINE_START'; fen: string; requestId: string; tabId: number; manual: boolean; settings: ExecutionSettings; nativeEvaluation?: Evaluation; level?: LearningLevel }
 export function settingsFrom(value: unknown): Settings {
     const input = value && typeof value === 'object' ? value as Partial<Settings> : undefined;
     const result: Settings = structuredClone(DEFAULT_SETTINGS);
+    if (typeof input?.autoReviewFinishedGames === 'boolean') result.autoReviewFinishedGames = input.autoReviewFinishedGames;
     if (input?.analysisSource === 'auto' || input?.analysisSource === 'local') result.analysisSource = input.analysisSource;
     // Legacy provider selections become the cloud preference; the new default is local-first.
     if (input?.cloudProvider && ['gemini', 'openai', 'groq'].includes(input.cloudProvider)) {

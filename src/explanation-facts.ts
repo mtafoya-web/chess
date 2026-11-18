@@ -11,10 +11,11 @@ import { reviewInsight } from './review-insights';
 import type { Evaluation } from './types';
 import { coachingText } from './review-model';
 import { DEFAULT_REVIEW_PREFERENCES, type LearningLevel } from './review-scoring';
+import { coachingContext, type CoachingContext } from './coaching-context';
 
 export interface ReviewFacts { summary: string; mode?: 'analysis' | 'review'; analysisOpening?: AnalysisOpeningContext; playedMove?: string; before?: Evaluation; label?: string; lossCp?: number; history?: BoardHistory; opening?: OpeningContext; level?: LearningLevel; provisional?: boolean }
 export interface ExplanationFact { id: string; role: 'lead' | 'support' | 'reply'; scope: string; branch: string; text: string; meaning?: string; evidence: string; effect?: string; benefit?: string; rank?: number; compatibleWith?: string[]; evidenceSteps?: number[]; cause?: string; actor?: 'w' | 'b' }
-export interface ExplanationCatalog { version: 2; context: BoardContext; key: string; facts: ExplanationFact[]; opening?: OpeningContext; reviewEvidence?: ReviewEvidence; analysisEvidence?: AnalysisEvidence }
+export interface ExplanationCatalog { version: 2; context: BoardContext; key: string; facts: ExplanationFact[]; opening?: OpeningContext; reviewEvidence?: ReviewEvidence; analysisEvidence?: AnalysisEvidence; coaching?: CoachingContext }
 export function moveWords(move: Move, past = false): string {
     let text = past ? `${colorName(move.color)} moved the ${pieceNames[move.piece]} from ${move.from} to ${move.to}` : `Move ${colorName(move.color)}'s ${pieceNames[move.piece]} from ${move.from} to ${move.to}`;
     if (move.isKingsideCastle() || move.isQueensideCastle()) text += `, castling ${move.isKingsideCastle() ? 'kingside' : 'queenside'}`;
@@ -88,5 +89,5 @@ export function buildExplanationFacts(fen: string, result: Evaluation, review?: 
     // Bundle only complementary support, ranked separately from the already-used primary idea.
     const approved = facts.filter(f => !analysis || analysisFactAllowed(`${f.text} ${f.meaning ?? ''}`, analysis, f.actor));
     approved.sort((a, b) => (b.rank ?? 0) - (a.rank ?? 0));
-    return { version: 2, context, facts: approved, opening, reviewEvidence, analysisEvidence: analysis, key: JSON.stringify([context.key, result, review?.before, review?.label, review?.level, review?.provisional, 3]) };
+    return { version: 2, context, facts: approved, opening, reviewEvidence, analysisEvidence: analysis, coaching: coachingContext(context, result, review), key: JSON.stringify([context.key, result, review?.before, review?.label, review?.level, review?.provisional, 4]) };
 }

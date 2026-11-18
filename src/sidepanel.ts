@@ -9,7 +9,7 @@ import { chromeAvailability, downloadChromeAI } from './chrome-ai';
 import { applySiteTheme, themePageUrl } from './theme';
 import { KIBITZ_MARK } from './wordmark';
 import { explanationStatus, PROVIDER_NAMES } from './explanation-state';
-import { isAiTestResult, providerFailureText } from './provider-failures';
+import { isAiTestResult, providerFailureText, failureReason } from './provider-failures';
 import { buildExplanationFacts } from './explanation-facts';
 import { renderExplanation } from './coach-prompt';
 
@@ -30,11 +30,12 @@ const manualResult = element('manual-result');
 const send = sendBackground;
 element<HTMLButtonElement>('test-ai').addEventListener('click', async () => {
     const button = element<HTMLButtonElement>('test-ai'), output = element('ai-test-status');
-    button.disabled = true; output.textContent = 'Testing AI in the explanation worker…';
+    button.disabled = true; output.textContent = 'Testing an explanation…';
     try {
         const response = await send({type:'TEST_AI'});
         if (!isAiTestResult(response.test)) throw new Error('Test unavailable. Reopen settings and try again.');
         const result = response.test;
+        if (result.provider === 'chrome') chromeStatus.textContent = 'Chrome AI is ready. A sample explanation succeeded.';
         output.textContent = [result.provider === 'facts' ? 'No AI provider completed the sample explanation.' : `${PROVIDER_NAMES[result.provider]} produced a validated sample explanation.`,
             ...result.attempts.map(providerFailureText), result.provider === 'facts' ? '' : result.text].filter(Boolean).join('\n');
     } catch { output.textContent = 'Test unavailable. Reopen settings and try again.'; }
@@ -43,9 +44,10 @@ element<HTMLButtonElement>('test-ai').addEventListener('click', async () => {
 let port: chrome.runtime.Port;
 function connect() {
     port = chrome.runtime.connect({ name: 'panel' });
-    port.onMessage.addListener((event: AnalysisEvent & { manual: boolean }) => {
+    port.onMessage.addListener((event: unknown) => {
         if (!isPanelMessage(event)) return;
-        if (receiveTheme(event)) return;
+        if (event.type === 'REVIEW_STATE_CHANGED') { reviewPanel.changed(); return; }
+        if (event.type === 'SITE_THEME') { receiveTheme(event); return; }
         if (event.type.startsWith('REVIEW_')) { reviewPanel.changed(); return; }
         if (!event.manual) {
             if (event.type === 'EXPLANATION_STATE') status.textContent = explanationStatus(event);
@@ -70,6 +72,7 @@ function connect() {
 }
 function display() {
     provider.value = settings.provider;
+    element<HTMLInputElement>('auto-review').checked = settings.autoReviewFinishedGames !== false;
     element<HTMLSelectElement>('analysis-source').value = settings.analysisSource ?? 'auto';
     selected = settings.provider !== 'auto' && settings.provider !== 'chrome' && settings.provider !== 'ollama' ? settings.provider : settings.cloudProvider;
     cloudProvider.value = selected;
@@ -87,6 +90,7 @@ function display() {
     updateOllamaCommands();
 }
 function capture() {
+    settings.autoReviewFinishedGames = element<HTMLInputElement>('auto-review').checked;
     settings.analysisSource = element<HTMLSelectElement>('analysis-source').value as Settings['analysisSource'];
     settings.models[selected] = model.value.trim();
     if (key.value.trim()) replacements[selected] = key.value.trim();
@@ -113,6 +117,7 @@ element<HTMLFormElement>('settings').addEventListener('submit', async event => {
         const response = await send({ type: 'SAVE_SETTINGS', settings, credentials: replacements });
         if (response?.error) throw new Error(response.error);
         settings = response.settings; configured = response.configured; replacements = {}; display();
+        element('ai-test-status').textContent = ''; void checkChrome();
         saved.textContent = 'Settings saved. New explanations use this setup.'; await send({ type: 'SETTINGS_CHANGED' });
     } catch (error) { saved.textContent = error instanceof Error ? error.message : 'Could not save settings.'; }
 });
@@ -120,18 +125,18 @@ const setup = element<HTMLButtonElement>('chrome-setup');
 const chromeStatus = element('chrome-status');
 async function checkChrome() {
     const availability = await chromeAvailability();
-    setup.disabled = availability === 'available';
-    setup.textContent = availability === 'unavailable' ? 'Check availability again' : availability === 'available' ? 'Chrome AI ready' : availability === 'downloading' ? 'Show download progress' : 'Enable Chrome AI';
-    chromeStatus.textContent = availability === 'available' ? 'Ready for local explanations. No API key needed.' : availability === 'unavailable' ? 'Unavailable on this browser or device. Automatic will try Ollama next.' : availability === 'downloading' ? 'Model download is in progress.' : 'Download the local model once to enable free, offline explanations.';
+    setup.disabled = false;
+    setup.textContent = availability === 'unavailable' ? 'Check availability again' : availability === 'available' ? 'Recheck availability' : availability === 'downloading' ? 'Show download progress' : 'Enable Chrome AI';
+    chromeStatus.textContent = availability === 'available' ? 'Model downloaded. Choose Test AI to check an explanation.' : availability === 'unavailable' ? 'Unavailable on this browser or device. Automatic will try another source.' : availability === 'downloading' ? 'Model download is in progress.' : 'Download the local model once to enable free, offline explanations.';
 }
 setup.addEventListener('click', async () => {
-    if (await chromeAvailability() === 'unavailable') { await checkChrome(); return; }
+    if (setup.textContent === 'Recheck availability' || setup.textContent === 'Check availability again') { await checkChrome(); return; }
     setup.disabled = true; chromeStatus.textContent = 'Preparing Chrome AI…';
     try {
         await downloadChromeAI(percent => { chromeStatus.textContent = `Downloading Chrome AI: ${percent}%`; });
         await checkChrome(); await send({ type: 'SETTINGS_CHANGED' });
     } catch (error) {
-        chromeStatus.textContent = error instanceof Error ? error.message : 'Could not prepare Chrome AI. Try again.';
+        chromeStatus.textContent = providerFailureText({provider:'chrome',reason:failureReason(error),stage:'creation'});
         setup.disabled = false;
     }
 });
@@ -157,7 +162,12 @@ window.addEventListener('pagehide',()=>reviewPanel.destroy());
 connect();
 void send({ type: 'REOPEN' }).catch(() => {});
 
+let capturePending = false;
 async function startPageReview(pgn?: string) {
+    if (capturePending) return;
+    capturePending = true;
+    const button = element<HTMLButtonElement>('capture-game');
+    button.disabled = true;
     const reviewStatus = element('review-status');
     reviewStatus.textContent = pgn ? 'Checking PGN against the website board…' : 'Loading the selected completed game…';
     try {
@@ -165,6 +175,7 @@ async function startPageReview(pgn?: string) {
         if (response?.error) throw new Error(response.error);
         reviewStatus.textContent = `Review started on the website: ${response.title ?? 'selected game'}. Use the board card or guided review to continue.`;
     } catch (error) { reviewStatus.textContent = error instanceof Error ? error.message : 'Could not start review on this page.'; }
+    finally { capturePending = false; button.disabled = false; }
 }
 element('capture-game').addEventListener('click', () => { void startPageReview(); });
 element<HTMLFormElement>('pgn-form').addEventListener('submit', event => { event.preventDefault(); void startPageReview(element<HTMLTextAreaElement>('review-pgn').value); });
@@ -221,12 +232,12 @@ async function refreshTheme() {
     }
 }
 chrome.runtime.onMessage.addListener((message, sender) => { if (isBackgroundSender(sender) && isPanelMessage(message)) receiveTheme(message); });
-chrome.tabs.onActivated.addListener(() => { void refreshTheme(); });
+chrome.tabs.onActivated.addListener(() => { reviewPanel.changed(); void refreshTheme(); });
 chrome.tabs.onUpdated.addListener((tabId, info) => {
     if (tabId !== themeTabId) return;
     if (info.status !== 'complete' && !info.url) return;
     if (info.status !== 'complete' && themePageKey({id:tabId,url:info.url}) === themePage) return;
-    void refreshTheme();
+    reviewPanel.changed(); void refreshTheme();
 });
 void refreshTheme();
 function updateOllamaCommands() {

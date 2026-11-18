@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width,initial-scale=1">
-    <title>Kibitz setup</title>
+    <title>Kibitz review</title>
 </head>
 
 <body>
@@ -17,13 +17,11 @@
         <section id="review-page" aria-label="Game review">
         <section class="start" aria-labelledby="start-heading"><span class="eyebrow">Your game</span>
             <h1 id="start-heading">Review your game</h1>
-            <p class="hint">Open a completed game or select it on your Chess.com or Lichess history board. Guidance
-                appears directly on that board.</p>
-            <div class="actions"><button id="capture-game" type="button">Review selected game</button><button
-                    id="reopen" type="button" class="secondary">Show board card</button></div>
-            <p id="status" role="status">Open a supported study board to begin.</p>
-            <p class="hint">Analysis boards show candidate arrows and a heatmap. Game review focuses on played moves,
-                inaccuracies, mistakes and blunders, with visual cues on the website's board.</p>
+            <p class="hint">Open a finished Chess.com or Lichess game to review its key moments on the board.</p>
+            <div class="actions"><button id="capture-game" type="button">Review selected game</button></div>
+            <p id="review-status" class="hint" role="status">Review starts automatically when enabled in Settings.</p>
+            <details id="review-more-options"><summary>More options</summary><button
+                    id="reopen" type="button" class="secondary">Show board card</button>
             <details id="pgn-import">
                 <summary>Have a PGN instead?</summary>
                 <p class="hint">Open a matching position on the website first. Import adds move history to the existing
@@ -33,15 +31,17 @@
                         page</button><label>Or choose a PGN file<input id="pgn-file" type="file"
                             accept=".pgn,.txt,application/x-chess-pgn,text/plain"></label></form>
             </details>
+            </details>
         </section>
         <section class="first-use" aria-labelledby="first-use-heading"><button id="dismiss-intro" class="secondary" type="button">Hide introduction</button><h2 id="first-use-heading">Make the explanations yours</h2><p>Review works immediately with local analysis. No AI setup is required.</p><label>Learning level<select id="learning-level"><option value="beginner">Beginner: explain the basics</option><option value="intermediate">Intermediate: ideas and short lines</option><option value="advanced">Advanced: concise analysis</option></select></label><details><summary>How review works</summary><p>Start with the key moments, try finding a better move, then reveal the explanation when you are ready. You can change your learning level in any review.</p></details></section>
-        <p id="review-status" class="hint" role="status"></p>
         <section id="review-overview" aria-label="Game overview"></section>
         </section>
         <section id="lessons-page" hidden aria-label="Learning history"><h1>Your lessons</h1><p>Saved on this Chrome profile. Each lesson comes from a reviewed position.</p><div id="level-suggestion"></div><div id="lesson-history"></div><button id="clear-history" class="secondary" type="button">Clear learning history</button><p id="history-status" role="status"></p></section>
         <section id="settings-page" hidden aria-label="Settings">
         <form id="settings"><span class="eyebrow">Optional explanations</span>
-            <h1>Set up explanations</h1>
+            <h1>Review and explanations</h1>
+            <label class="checkbox-control"><input id="auto-review" type="checkbox" checked> Automatically review finished games</label>
+            <p class="hint">Starts when your game ends or you open a completed game. Pause or exit from the board card.</p>
             <p class="hint">Move analysis works immediately. Choose an AI below for extra explanations. Automatic tries
                 Chrome AI, then Ollama, then your optional cloud service.</p>
             <label>Move suggestions<select id="analysis-source">
@@ -96,6 +96,7 @@
             <p class="hint">Tests your saved explanation settings with a small verified sample position.</p>
             <p id="ai-test-status" class="hint" role="status" style="white-space:pre-line"></p>
         </form>
+        <p id="status" class="hint" role="status"></p>
         <details>
             <summary>Advanced: analyze a FEN</summary>
             <p class="hint">For a separate study position. Website overlays follow the website board.</p>

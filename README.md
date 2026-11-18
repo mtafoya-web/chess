@@ -26,7 +26,7 @@ Use Kibitz for study, analysis, completed-game review, and practice against a co
 
 ## 1. Install the extension
 
-You need **desktop Chrome 116 or newer**. For a packaged release, unzip `releases/kibitz-1.1.0.zip`, open `chrome://extensions`, enable Developer mode, choose Load unpacked, and select the extracted folder. End users do not need Node.js.
+You need **desktop Chrome 116 or newer**. For a packaged release, unzip `releases/kibitz-1.2.3.zip`, open `chrome://extensions`, enable Developer mode, choose Load unpacked, and select the extracted folder. End users do not need Node.js.
 
 To build from source, use **Node.js 22 or newer**, which includes npm. Built-in Chrome AI has additional browser and hardware requirements; Kibitz checks availability at runtime. See [Chrome's current Prompt API documentation](https://developer.chrome.com/docs/ai/prompt-api).
 
@@ -69,7 +69,7 @@ Chrome AI is free, runs on your computer, and does not need an API key.
 
 1. Open Kibitz settings.
 2. Click **Enable Chrome AI**.
-3. Wait for the model download to finish. Progress appears in the panel.
+3. Wait for the model download to finish. Progress appears in the panel. **Model available** means download readiness. Save **Chrome AI only** and choose **Test AI** to verify actual inference; the result identifies availability, creation, generation, or validation failures.
 
 You need internet access for the initial download. After that, local explanations can work offline. If Chrome AI is unsupported on your computer, Automatic tries Ollama next.
 
@@ -111,14 +111,16 @@ Existing keys migrate automatically: Kibitz saves them locally before removing t
 
 ### Review a game from your history
 
-1. Open a finished game on Chess.com or Lichess and choose **Review with Kibitz** on the card, or **Review selected game** in the panel.
-2. The selected move is analyzed first. A pausable whole-game pass starts automatically. Preliminary feedback appears before a deeper confirmation finishes.
+1. Finish a game or open a finished game on Chess.com or Lichess. Kibitz captures the completed history and starts reviewing automatically. Settings ? **Automatically review finished games** controls this behavior. **Review with Kibitz** on the card and **Review selected game** in the panel also start or explicitly restart a review.
+2. A pausable whole-game pass grades every played move without moving the website board. Selecting a move takes priority; the whole-game pass resumes afterward. Preliminary feedback appears before deeper confirmation finishes. A temporarily unreadable board clears selected-move guidance while the captured game continues to be analyzed.
 3. Use **Review** in the panel for the evaluation graph, player accuracy, key moments, and takeaways. The position selector is a keyboard-accessible alternative to clicking the graph.
 4. Choose **Next key moment**, or use the website's existing move controls. White / Black / Both filters affect lesson selection; orientation does not determine player identity.
 5. Select a learning level: Beginner adds everyday explanations and a practical lesson; Intermediate focuses on the verified consequence; Advanced includes concise notation and the searched line. The underlying assessment is the same.
 6. Choose **Show why** to reveal consequence highlights. **Show better move** returns to the earlier position and reveals a single alternative arrow when native navigation can verify it. Otherwise, use the text in Details and the website controls.
 7. Choose **Try a better move** for an exercise. Kibitz hides its evaluation, explanation, and solution overlays. Enter SAN such as `Nf3`, or select From / To / Promotion without needing notation. Hints, reveal, skip, and Return to game remain available.
-8. Visit **Lessons** for saved reviews, recurring themes, exercise outcomes, and deletion controls. Reopening an explicitly started review restores compatible results. Exit review prevents automatic resumption until you start it again.
+8. Visit **Lessons** for saved reviews, recurring themes, exercise outcomes, and deletion controls. Refresh restores compatible results and the requested running/paused state. Hidden tabs pause calculation and resume when shown, unless manually paused. Exit review or Close suppresses automatic restart for that game in the current tab, including after refresh. Deleted reviews require an explicit restart.
+
+Native Chess.com PGN may omit `Link` and `GameId` headers. On an individual game page, Kibitz uses the page game ID, validates the complete PGN, and confirms the result and legal move history before starting. Explicitly conflicting identities and unfinished exports remain blocked.
 
 Review keeps the website's board and does not require the site's review report. Core analysis runs locally. Optional AI wording uses the existing local-first provider chain; failed providers leave deterministic feedback available. A background sweep does not request AI wording for every position.
 
@@ -143,7 +145,7 @@ If capture fails, expand **Have a PGN instead?** and import one standard-chess g
 - The card prefers a reserved space beside the board. When that space is too narrow or cannot grow safely, it gets its own row below the board/control layout. Expanded explanations do not cover native controls.
 - The card and settings panel match the website's colors once when you arrive, then keep that palette through moves, resizing, and theme changes. Another page or a reload allows a fresh match. Move-selection hashes do not reset colors. Unsupported tabs use a neutral system palette captured on arrival.
 
-Changing positions or hiding the tab cancels the old analysis. Kibitz rebuilds piece and capture facts from the selected legal history; going backward restores the earlier position. For an imported starting position or FEN, captures before that starting point remain unknown. Models choose among verified facts, and Kibitz renders the chess statements rather than displaying unchecked model prose. Threat explanations distinguish an attack from a proven material win, and possible replies are hypothetical.
+Changing positions or hiding the tab cancels the old analysis. Kibitz rebuilds piece and capture facts from the selected legal history; going backward restores the earlier position. For an imported starting position or FEN, captures before that starting point remain unknown. **Explain further** requests AI coaching using the move, evaluation, verified positional evidence, and short legal continuations. AI coaching can contain mistakes; its evidence references and response structure are checked, but those checks cannot prove every sentence correct. Verified feedback remains available if AI fails.
 
 ### Choose the move-analysis source
 
@@ -163,8 +165,10 @@ Kibitz checks the position before analyzing it. If turn information, castling ri
 
 | Problem | What to try |
 | --- | --- |
+| Extension context invalidated after a reload | Refresh each open chess tab after reloading/updating Kibitz. Version 1.2.1 stops old content scripts and removes stale overlays. Home/account pages without a board are normal and remain quiet. |
 | No card appears | Refresh the chess page, open an analysis or study board, and click **Show board card** in settings. Live human games are disabled. |
 | Chrome AI is unavailable | Update Chrome and check the linked hardware requirements, or use Ollama or a cloud service. |
+| Chrome AI says available but explanations fail | Model availability is separate from inference. Save **Chrome AI only**, then click **Test AI** and report the displayed stage and reason. A verified result must come from the explanation worker, not a cached answer. |
 | A move appears without an explanation | Stockfish is working. Check the AI setup steps above. |
 | Ollama cannot connect | Make sure Ollama is running, the model is downloaded, and `OLLAMA_ORIGINS` matches the origin in Diagnostics. Restart Ollama after changing it. |
 | Ollama takes too long | Try a smaller model and update its name in settings. Ollama gets 25 seconds per attempt. |
@@ -180,7 +184,9 @@ Kibitz is a desktop extension. It fits small browser windows, but it does not ru
 
 ## For developers
 
-Run the tests and build:
+For the 1.2 changes, the extension is compiled and packaged locally; browser behavior and real AI inference are verified with you using the [manual walkthrough](docs/manual-testing.md). Automated suites and probes are not run on your behalf.
+
+The existing developer checks remain available when you choose to run them:
 
 ```sh
 npm test
@@ -207,7 +213,7 @@ Technical notes:
 - Kibitz uses Chrome's Manifest V3 extension format and has no hosted backend.
 - Only one analysis runs at a time; old results are ignored.
 - The extension reads the site's board position without changing the site's game state.
-- Each explanation attempt has a time limit: 12 seconds for Chrome AI, 25 for Ollama, and 20 for cloud. The overall explanation limit is 65 seconds. Engine analysis and the initial Chrome AI download have separate lifecycles.
+- Each explanation attempt has a time limit: 30 seconds for Chrome AI, 25 for Ollama, and 20 for cloud. The overall explanation limit is 80 seconds. Engine analysis and the initial Chrome AI download have separate lifecycles.
 - Failed partial explanations are discarded before trying another source.
 - Runtime payloads and sender contexts are validated before work starts. Expected integration failures use fixed diagnostic codes without raw errors, prompts, keys, or game exports.
 - Opening names use a pinned CC0 Lichess dataset; attribution and reproducible source data are in `src/data/OPENINGS-LICENSE.md`. Coaching text is written for Kibitz.
@@ -237,7 +243,9 @@ The internal Best and Excellent grades are both displayed as **Accurate** during
 
 The application legally replays history, constructs the current piece inventory, and detects supported effects: captures, checks, development, central influence, cleared bishop/queen lines, and castling preparation. An attacked piece is not automatically lost. A positional benefit is not proof that a move is uniquely best, and hypothetical replies are not predictions.
 
-Providers receive the verified before/after positions, recent verified history, played and preferred moves, mover-relative evaluation change, search depths, distinct PV branches, and approved cause facts. They return a small JSON plan naming approved facts, optional supporting step indices, and a controlled tone variant. Kibitz validates those references against the selected cause and actual-line steps and renders the chess statements itself. Unsupported plans advance to the next eligible provider in automatic mode; an explicitly selected provider falls back directly to verified wording. Failed partial output is never displayed. The validated paragraph replaces the main explanation rather than appending a duplicate. AI chooses the teaching focus from approved facts; native engine evidence or local Stockfish supplies evaluations and legal searched lines. This limits unsupported model claims without guaranteeing that evidence generation itself is error-free.
+Providers receive a bounded coaching context: positions, played and preferred moves, evaluations, learning level, verified positional facts and causes, and up to three legal branches of eight plies each. This compact comparison helps explain a move and the opponent's replies without sending the full search tree. Providers return structured prose with an explanation, a practical takeaway, and evidence references. Beginner, Intermediate, and Advanced share the same engine assessment and differ in explanation style.
+
+Kibitz checks the response shape, length, referenced facts and continuation steps, plus known unsupported claim patterns. These checks do not guarantee that arbitrary AI prose is correct. Failed partial output is never displayed. Automatic mode tries the next eligible provider when a response fails validation; a selected-only provider falls back to deterministic verified wording. Chrome generation retries once without response constraints when Chrome rejects those generation options. Generation errors are reported separately from unavailable hardware. Explanation attribution and diagnostic details are kept in Details.
 
 History is scoped to the selected move. Going backward restores pieces and removes later captures. A FEN alone cannot establish past captures or the game's opening. Custom-start games retain only the history following that starting position.
 
@@ -272,8 +280,10 @@ No new permissions are required for lazy opening data or the gold knight icon. T
 
 | Context | Responsibility | Main modules |
 | --- | --- | --- |
-| Content script | Board detection and verification, card, overlays, native selected-move review, immediate factual display | `content.ts`, `adapters.ts`, `card.ts`, `in-page-review.ts`, `overlay.ts` |
-| Background worker | Authorization, settings and credentials, native-page reads, routing and cancellation ownership | `background.ts`, `messages.ts`, `settings.ts` |
+| Content script | Verified selected-move presentation, card, overlays and native controls | `content.ts`, `adapters.ts`, `card.ts`, `in-page-review.ts`, `overlay.ts` |
+| Site snapshot | One serializable MAIN-world reader for page location, game identity, completion and native selection | `site-snapshot.ts` |
+| Review coordinator | Whole-game queue, selected-move priority, pause/resume, completion and cancellation | `review-coordinator.ts` |
+| Background worker | Authorization, settings/credentials, shared snapshot reads, capture and event routing | `background.ts`, `messages.ts`, `settings.ts` |
 | Offscreen document | Engine jobs, before/after comparisons, opening lookup, provider attempts | `offscreen.ts`, `review-analysis.ts`, `opening-loader.ts`, `providers.ts` |
 | Stockfish worker | Locally packaged UCI engine and WASM search | `engine.ts`, `dist/engine/` |
 | Side panel | Setup, credential changes, capture/import controls, manual FEN results | `sidepanel.ts`, `sidepanel.html` |
@@ -340,7 +350,7 @@ node scripts/browser-smoke.mjs --fail-openings
 
 To regenerate local assets, use `node scripts/index-openings.mjs` for the pinned checked-in TSVs and `node scripts/generate-icons.mjs` with `CHROME_PATH` for the editable SVG. Rebuild afterward. Keep source attribution when updating the opening dataset.
 
-Further performance work could reuse a warmed Stockfish worker, but would need separate stop/reset and stale-output tests. Dataset packing, search-time changes, and build-tool upgrades should be evaluated independently rather than hiding a chunk warning or weakening legal checks.
+Stockfish already reuses completed workers; cancellation terminates an in-flight worker to isolate stale UCI output. The 1.2 cleanup also shares short-lived site reads, removes panel review polling and duplicate game replay, and bounds model prompts. Dataset packing, search-time changes, and build-tool upgrades should be evaluated independently rather than hiding a chunk warning or weakening legal checks.
 
 ## Data and licenses
 
@@ -350,7 +360,7 @@ The build puts its license in `dist/engine/COPYING.txt` and source information i
 
 Opening names/sequences use the CC0 Lichess dataset pinned to commit `a6189a30dc273ccb21fc2536a9a2fefd5592a67a`. Source TSVs, attribution, and revision live in `src/data/`; the build includes `OPENINGS-LICENSE.md`, `openings-revision.txt`, and exactly one generated 3,865-row index. Coaching notes are original application text.
 
-### Version 1.1 development checks
+### Existing automated development checks
 
 ```sh
 npm test

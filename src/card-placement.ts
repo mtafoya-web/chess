@@ -24,6 +24,7 @@ export class CardPlacement {
     private resize = new ResizeObserver(this.schedule);
     constructor(private readonly host: HTMLElement) {
         this.slot.dataset.kibitzSlot = '';
+        this.slot.dataset.kibitzSide = 'below';
         this.slot.style.cssText = 'display:flow-root;position:relative;box-sizing:border-box;width:100%;min-width:0;max-width:100%;height:auto;flex:0 0 auto;grid-column:1 / -1;clear:both;';
         this.resize.observe(host);
         window.addEventListener('scroll', this.schedule, {passive: true, capture: true});
@@ -90,7 +91,10 @@ export class CardPlacement {
         if (Math.abs(before.width - after.width) <= 1 && Math.abs(before.height - after.height) <= 1
             && !rectanglesOverlap(card, after)
             && this.provesGrowth(wrapper) && this.isAllocated() && !placementCollisions(this.host).length) {
-            this.adjacent = wrapper; return true;
+            this.adjacent = wrapper;
+            const side = rect.right <= before.left ? 'left' : 'right';
+            if (this.slot.dataset.kibitzSide !== side) this.slot.dataset.kibitzSide = side;
+            return true;
         }
         this.releaseReservation(); return false;
     }
@@ -106,19 +110,32 @@ export class CardPlacement {
         if (!anchor || !anchor.parentElement || anchor === document.body || /^(absolute|fixed)$/.test(getComputedStyle(anchor).position)) return false;
         const before = board.getBoundingClientRect(), layout = anchor.getBoundingClientRect();
         const parent = anchor.parentElement.getBoundingClientRect();
-        if (layout.width <= 0 || parent.width < layout.width + 276 || this.viewport < layout.width + 276) return false;
+        if (layout.width <= 0) return false;
+        const roomRight = parent.right - layout.right;
+        const roomLeft = layout.left - parent.left;
+        const right = roomRight >= 276 && parent.width >= layout.width + 276 && this.viewport >= layout.width + 276;
+        const left = roomLeft >= 276 && parent.width >= layout.width + 276 && this.viewport >= layout.width + 276;
+        if (!right && !left) return false;
+        const side = right ? 'right' : 'left';
         const wrapper = document.createElement('div'); wrapper.dataset.kibitzLayout = '';
-        wrapper.style.cssText = `display:grid;grid-template-columns:${layout.width}px minmax(260px,340px);gap:16px;align-items:start;min-width:0;max-width:100%;`;
+        wrapper.style.cssText = `display:grid;grid-template-columns:${side === 'right' ? `${layout.width}px minmax(260px,340px)` : `minmax(260px,340px) ${layout.width}px`};gap:16px;align-items:start;min-width:0;max-width:100%;`;
         const width = anchor.style.getPropertyValue('width'), priority = anchor.style.getPropertyPriority('width');
         wrapper.style.gridArea = getComputedStyle(anchor).gridArea;
-        anchor.before(wrapper); wrapper.append(anchor,this.slot);
+        anchor.before(wrapper);
+        if (side === 'right') wrapper.append(anchor, this.slot);
+        else wrapper.append(this.slot, anchor);
         anchor.style.width = `${layout.width}px`;
-        this.slot.style.gridColumn = '2'; this.slot.style.paddingTop = `${Math.max(0,before.top-layout.top)}px`;
+        this.slot.style.gridColumn = side === 'right' ? '2' : '1';
+        this.slot.style.paddingTop = `${Math.max(0,before.top-layout.top)}px`;
         this.layoutReservation = {wrapper,anchor,width,priority};
         const after = board.getBoundingClientRect(), card = this.host.getBoundingClientRect();
         if (Math.abs(before.width-after.width)<=1 && Math.abs(before.height-after.height)<=1
-            && card.left>=after.right && card.top<after.bottom && this.isAllocated() && !placementCollisions(this.host).length) {
-            this.adjacent = wrapper; return true;
+            && (side === 'right' ? card.left >= after.right : card.right <= after.left)
+            && card.top < after.bottom && card.bottom > after.top
+            && this.isAllocated() && !placementCollisions(this.host).length) {
+            this.adjacent = wrapper;
+            if (this.slot.dataset.kibitzSide !== side) this.slot.dataset.kibitzSide = side;
+            return true;
         }
         this.releaseReservation(); return false;
     }
@@ -173,6 +190,7 @@ export class CardPlacement {
         if (!board) return;
         this.releaseReservation();
         this.adjacent = undefined;
+        if (this.slot.dataset.kibitzSide !== 'below') this.slot.dataset.kibitzSide = 'below';
         let anchor = board.closest<HTMLElement>('main.analyse, main.round, .analyse, .round__app, .board-layout-main, .board-layout, main')
             ?? board.closest<HTMLElement>('.board-wrapper, .analyse__board') ?? board.parentElement ?? board;
         // Include every native control row and move list in the complete site layout.

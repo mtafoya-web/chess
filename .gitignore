@@ -6,6 +6,7 @@ dist/
 *.exe
 
 .bundle/
+.cache/
 
 # Planning and generated documentation
 docs/

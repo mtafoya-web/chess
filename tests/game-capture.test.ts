@@ -26,7 +26,7 @@ describe('completed game capture', () => {
         };
         const run = new Function('location', 'document', 'HTMLTextAreaElement', `return (${readGameSnapshot.toString()})();`);
         const snapshot = run({ href: 'https://www.chess.com/games/archive/example' }, document, HTMLTextAreaElement);
-        expect(snapshot).toMatchObject({ completed: true, gameId: '1234', url: 'https://www.chess.com/game/live/1234' });
+        expect(snapshot).toMatchObject({ completed: true, gameId: '1234', pageUrl: 'https://www.chess.com/games/archive/example', canonicalGameUrl: 'https://www.chess.com/game/live/1234' });
         expect(captureSession(snapshot).moves).toHaveLength(2);
     });
     it('blocks a running clock even with stale completion markers', () => {
@@ -51,7 +51,7 @@ describe('completed game capture', () => {
         const run = new Function('location', 'document', 'HTMLTextAreaElement', `return (${readGameSnapshot.toString()})();`);
         const snapshot = run({ href: 'https://www.chess.com/game/live/1234' }, document, HTMLTextAreaElement);
         expect(captureSession(snapshot)).toMatchObject({ result: '1-0', source: { gameId: '1234' } });
-        expect(run({ href: 'https://www.chess.com/member/example/games' }, document, HTMLTextAreaElement)).toBeUndefined();
+        expect(run({ href: 'https://www.chess.com/member/example/games' }, document, HTMLTextAreaElement)).toMatchObject({ completed: true, gameId: '1234' });
     });
     it('uses a verified finished Chess.com board export without native review DOM and rejects stale or ongoing exports', () => {
         document.body.innerHTML = '<wc-chess-board></wc-chess-board>';
@@ -65,7 +65,43 @@ describe('completed game capture', () => {
         exported = '[Link "https://www.chess.com/game/live/1234"]\n[Result "*"]\n\n1. e4 *';
         expect(run(location, document, HTMLTextAreaElement).completed).toBe(false);
         exported = pgn;
-        expect(run(location, document, HTMLTextAreaElement).completed).toBe(false);
+        expect(run(location, document, HTMLTextAreaElement)).toMatchObject({ completed: true, result: '1-0', pgn });
+    });
+    it.each(['/game/live/187450449798', '/game/daily/187450449798', '/analysis/game/live/187450449798'])(
+        'accepts native finished PGN without Link/GameId on %s', path => {
+            // Synthetic moves reproduce the native API shape reported for the
+            // user's game; no player names or actual game history are retained.
+            const exported = '[Result "0-1"]\n\n1. f3 e5 2. g4 Qh4# 0-1';
+            const board = document.createElement('wc-chess-board') as HTMLElement & { game: object };
+            board.game = {getPGN:()=>exported,getHeaders:()=>({Result:'0-1'})};
+            document.body.append(board);
+            const run = new Function('location','document','HTMLTextAreaElement',`return (${readGameSnapshot.toString()})();`);
+            const snapshot = run({href:`https://www.chess.com${path}`},document,HTMLTextAreaElement);
+            expect(snapshot).toMatchObject({gameId:'187450449798',completed:true,allowed:true,result:'0-1',pgn:exported});
+            expect(captureSession(snapshot)).toMatchObject({result:'0-1',source:{gameId:'187450449798'}});
+            expect(captureSession(snapshot).moves).toHaveLength(4);
+        },
+    );
+    it('requires an identified export on history lists and rejects unfinished or conflicting native data', () => {
+        const board = document.createElement('wc-chess-board') as HTMLElement & {game:object};
+        let exported = pgn;
+        let headers: Record<string,string> = {Result:'1-0'};
+        board.game = {getPGN:()=>exported,getHeaders:()=>headers};
+        document.body.append(board);
+        const run = new Function('location','document','HTMLTextAreaElement',`return (${readGameSnapshot.toString()})();`);
+        const read = (path='/game/live/1234') => run({href:`https://www.chess.com${path}`},document,HTMLTextAreaElement);
+        expect(read('/games/archive/example').completed).toBe(false);
+        headers = {Result:'1-0',GameId:'5678'};
+        expect(read().completed).toBe(false);
+        headers = {Result:'0-1'};
+        expect(read().completed).toBe(false);
+        headers = {Result:'1-0',Link:'https://www.chess.com/game/live/5678'};
+        exported = `[Link "https://www.chess.com/game/live/1234"]\n${pgn}`;
+        expect(read().completed).toBe(false);
+        headers = {Result:'*'};
+        exported = '[Result "*"]\n\n1. e4 *';
+        const stale = document.createElement('div'); stale.dataset.result = '1-0'; document.body.append(stale);
+        expect(read().completed).toBe(false);
     });
     it('recognizes ordinary finished Lichess round controls and still blocks a running clock', () => {
         document.body.innerHTML = '<div class="round__app"><div class="result-wrap"><div class="result">1-0</div></div></div>';

@@ -1,3 +1,27 @@
+# Kibitz 1.2.3 manual verification
+
+Version 1.2.3 integrates three parallel workstreams: current Lichess game-route and round-replay compatibility; Chrome generation compatibility retry and evidence-based prose; and a simpler review card with contextual actions and progressive disclosure. Existing Chess.com behavior and saved review preferences are retained. Same-game Lichess Analysis transitions preserve the captured session.
+
+Validation on November 18, 2026: all **400 tests passed**, including focused site, AI, UI, and shared integration regressions. The TypeScript check, production build, packaged-asset verification, and bundle checks passed. `releases/kibitz-1.2.3.zip` passed archive integrity validation; its SHA-256 is saved alongside it. See [TESTING.md](TESTING.md) for reload instructions and the hands-on checklist.
+
+The measured non-engine JavaScript is 368,284 bytes. The existing 350,000-byte limit was increased to 380,000 after inspecting module attribution for the added coaching context, site compatibility, and UI behavior. Per-file limits and the 8,500,000-byte total limit remain unchanged; the package is 8,395,012 bytes before ZIP compression.
+
+Real-device Chrome inference, live-site compatibility, and final visual/keyboard testing are left to the user's hands-on pass. Flexible AI prose is checked for response shape, evidence references, legal supplied continuations, and known unsupported claim patterns; this does not prove every sentence correct. No deployment or publication was performed.
+
+## Earlier verification notes
+
+Version 1.2.2 accepts native Chess.com PGN without Link/GameId tags on identified individual game URLs, rechecks the URL/result/legal history during capture, and puts capture status beside the review button. Regression fixtures were updated for that API shape and navigation/history changes; they are not executed in this user-led workflow. Manual capture verification starts with game 187450449798.
+
+Version 1.2.1 retires stale content scripts after extension reloads, catches synchronous/asynchronous messaging failures, and treats pages without boards as normal. The user reported that the context errors were resolved; finished-game capture is being checked separately.
+
+Version 1.2 adds automatic finished-game capture, background-owned whole-game review, shared site snapshots, and the updated Chrome AI request/diagnostic flow. It is a local build for your hands-on review; it is not published.
+
+The current validation workflow is compilation, packaged-asset verification, bundle budgets, and ZIP integrity only. Automated suites, smoke scripts, benchmarks, and real-provider probes are not run for this iteration. Earlier 1.1 results below are historical and do not validate 1.2 behavior. Existing automated fixtures also require review for the new scheduling and snapshot contracts before their old assertions can be treated as current acceptance criteria.
+
+Follow [manual-testing.md](docs/manual-testing.md) with the assistant, one checkpoint at a time. Browser behavior, native navigation on authenticated sites, real provider inference, accessibility, and subjective coaching quality remain pending until you report results.
+
+---
+
 # Kibitz 1.1 release readiness
 
 This is a local release candidate. Store publication and claims of competitive coaching quality require the remaining human checks below.

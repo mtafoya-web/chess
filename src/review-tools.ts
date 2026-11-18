@@ -1,8 +1,10 @@
+import {canCoach} from './review-progress';
 import { Chess } from 'chess.js';
 import { playUci } from './chess';
 import type { MoveAssessment, ReviewMove } from './review-types';
 import { lessonFor } from './review-model';
 import { DEFAULT_REVIEW_PREFERENCES, type ReviewPreferences } from './review-scoring';
+import { reviewInsight, reviewProblem } from './review-insights';
 
 export type ReviewAction = 'next' | 'practice' | 'why' | 'better' | 'deeper' | 'hint' | 'reveal' | 'skip' | 'cancel' | 'check' | 'preferences';
 export const reviewStyles = `
@@ -13,6 +15,8 @@ article{font-size:16px}.status,.lines,.review-ai-text{font-size:14px;opacity:1}.
 .review-tools .preferences{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px}.review-tools h3{font-size:17px;line-height:1.35;margin:0 0 8px}.review-tools .squares{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px}.review-tools .practice-result{min-height:22px}.review-tools .exercise-context{font-size:14px}.review-tools .practice-actions{margin-top:12px}.review-tools [hidden]{display:none!important}
 .review-tools .visual-preference{display:flex;align-items:center;gap:8px;min-height:44px;margin-bottom:8px}.review-tools .visual-preference input{width:18px;min-height:18px;height:18px;margin:0}
 :host([data-practice]) .visual-preference,:host([data-practice]) .recommendation,:host([data-practice]) .explanation,:host([data-practice]) .review-ai-text,:host([data-practice]) .review-cue-explanation,:host([data-practice]) .review-issues,:host([data-practice]) #guidance>details,:host([data-practice]) .review-legend,:host([data-practice]) .preview-note,:host([data-practice]) [data-ai],:host([data-practice]) [data-sweep]{display:none!important}
+:host([data-practice]) .review-options-disclosure,:host([data-practice]) .review-management{display:none!important}
+.review-tools .review-options-disclosure{margin:12px 0 0;border-top:1px solid var(--k-border,#7775)}.review-tools .review-options-disclosure summary{font-size:14px;opacity:1}.review-tools .review-options-disclosure .preferences{margin-bottom:8px}.review-management .review-actions{margin:0}.review-management summary{font-size:14px;opacity:1}
 @media(prefers-reduced-motion:no-preference){.review-tools button{transition:background-color .12s ease}}
 @media(forced-colors:active){.review-tools button{border:1px solid ButtonText}.review-tools .primary{background:ButtonFace;color:ButtonText}}
 `;
@@ -23,15 +27,21 @@ export class ReviewTools {
     private assessment?: MoveAssessment;
     private exercise?: ReviewMove;
     private hints = 0;
+    private canPractice = false;
     private preferences: ReviewPreferences = {...DEFAULT_REVIEW_PREFERENCES};
     get practicing() { return !!this.exercise; }
     get hinted() { return this.hints > 0; }
+    get currentPreferences() { return this.preferences; }
     constructor() {
         this.element.className = 'review-tools'; this.element.setAttribute('aria-label', 'Guided review and practice');
         this.element.innerHTML = `<div class="preferences"><label>Learning level<select data-level><option value="beginner">Beginner</option><option value="intermediate">Intermediate</option><option value="advanced">Advanced</option></select></label><label>Review moves for<select data-side><option value="both">Both players</option><option value="w">White</option><option value="b">Black</option></select></label></div>
 <label class="visual-preference"><input type="checkbox" data-visuals checked> Show teaching cues on board</label>
 <div class="toolbar" data-browse><button type="button" class="primary" data-action="next">Next key moment</button><button type="button" data-action="practice">Try a better move</button><button type="button" data-action="why" aria-pressed="false">Show why</button><button type="button" data-action="better">Show better move</button><button type="button" data-action="deeper">Analyze deeper</button></div>
 <section data-exercise hidden aria-labelledby="exercise-heading"><h3 id="exercise-heading">Find a better move</h3><p class="exercise-context"></p><p data-board-note></p><form data-attempt><label>Enter a move, such as Nf3<input data-san maxlength="32" autocomplete="off" spellcheck="false"></label><p>Or choose its squares:</p><div class="squares"><label>From<select data-from aria-label="Move from square"></select></label><label>To<select data-to aria-label="Move to square"></select></label><label>Promote to<select data-promotion><option value="q">Queen</option><option value="r">Rook</option><option value="b">Bishop</option><option value="n">Knight</option></select></label></div><button type="submit" class="primary" style="margin-top:12px">Check my move</button></form><p class="practice-result" role="status" aria-atomic="true"></p><div class="toolbar practice-actions"><button type="button" data-action="hint">Hint</button><button type="button" data-action="reveal">Reveal answer</button><button type="button" data-action="skip">Skip</button><button type="button" data-action="cancel">Return to game</button></div></section>`;
+        const options=document.createElement('details');options.className='review-options-disclosure';
+        const summary=document.createElement('summary');summary.textContent='Review options';options.append(summary);
+        options.append(this.element.querySelector('.preferences')!,this.element.querySelector('.visual-preference')!,this.element.querySelector('[data-action="deeper"]')!);
+        this.element.querySelector('[data-browse]')!.after(options);
         this.element.querySelectorAll<HTMLButtonElement>('[data-action]').forEach(button => button.addEventListener('click', () => this.onAction(button.dataset.action as ReviewAction)));
         const preferences = () => this.onAction('preferences', { ...this.preferences, level: this.level.value as ReviewPreferences['level'], side: this.side.value as ReviewPreferences['side'], visuals:this.element.querySelector<HTMLInputElement>('[data-visuals]')!.checked });
         this.level.addEventListener('change', preferences); this.side.addEventListener('change', preferences);
@@ -55,12 +65,22 @@ export class ReviewTools {
         this.move = move; this.assessment = assessment; this.level.value = preferences.level; this.side.value = preferences.side;
         this.preferences = preferences;
         this.element.querySelector<HTMLInputElement>('[data-visuals]')!.checked=preferences.visuals;
-        const problem = !!move && !!assessment && !!lessonFor(move, assessment);
+        let alternative=false, cues=false;
+        if(move && assessment?.feedback && canCoach(assessment)) {
+            try {
+                cues=reviewInsight(move,assessment.feedback,assessment.before,assessment.after).cues.length>0;
+                const preferred=assessment.before?.candidates.find(candidate=>candidate.uci===assessment.before?.bestMove);
+                if(preferred && preferred.uci!==move.uci) { playUci(new Chess(move.beforeFen),preferred.uci); alternative=true; }
+            } catch { /* Unsupported evidence keeps teaching actions hidden. */ }
+        }
+        const problem = !!move && !!assessment && canCoach(assessment) && !!reviewProblem(assessment.feedback?.label) && alternative && !!lessonFor(move, assessment);
+        this.canPractice=problem;
         for (const action of ['practice', 'better']) this.element.querySelector<HTMLButtonElement>(`[data-action="${action}"]`)!.hidden = !problem;
+        this.element.querySelector<HTMLButtonElement>('[data-action="why"]')!.hidden = !cues;
         this.element.querySelector<HTMLButtonElement>('[data-action="deeper"]')!.disabled = !move;
     }
     start() {
-        if (!this.move || !this.assessment) return false;
+        if (!this.move || !this.assessment || !this.canPractice) return false;
         this.exercise = this.move; this.hints = 0;
         this.element.querySelector<HTMLElement>('[data-browse]')!.hidden = true;
         this.element.querySelector<HTMLElement>('[data-exercise]')!.hidden = false;

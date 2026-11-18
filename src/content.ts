@@ -3,19 +3,19 @@ import { Card } from './card';
 import { Overlay, candidateHeatmap, candidateArrows, rankedCandidates } from './overlay';
 import { Chess } from 'chess.js';
 import type { AnalysisEvent, Evaluation } from './types';
-import { readGameSnapshot } from './game-capture';
 import { CardPlacement } from './card-placement';
 import { InPageReviewController } from './in-page-review';
 import type { NativeReviewSnapshot } from './site-review-types';
 import type { ReviewEvent } from './review-types';
 import { normalizedFen } from './chess';
-import { resolveReviewPly } from './site-review';
+import { resolveReviewPly, bindCapturedPosition } from './site-review';
 import { buildBoardContext } from './board-context';
 import { buildExplanationFacts } from './explanation-facts';
 import { renderExplanation } from './coach-prompt';
 import { isContentMessage, isBackgroundSender, isReviewSession } from './messages';
 import { createDiagnosticReporter, diagnostic } from './diagnostics';
 import { explanationStatus } from './explanation-state';
+import { ContentRuntime } from './content-runtime';
 
 const reportDiagnostic = createDiagnosticReporter(value => console.warn(value.code));
 performance.mark('kibitz:content-init:start');
@@ -37,11 +37,13 @@ let text = '';
 let result: Evaluation | undefined;
 let reviewEvents = Promise.resolve();
 const overlay = new Overlay();
-const send = (message: object) => chrome.runtime.sendMessage(message).catch(() => ({ error: 'Extension reloaded. Refresh this page.' }));
+const runtime = new ContentRuntime();
+const send = (message: object) => runtime.send(message);
 const card = new Card(() => {
+    const cancelId = requestId;
     review.stop();
     closed = true; revision++; signature = ''; requestId = ''; result = undefined;
-    card.host.remove(); overlay.clear(); void send({ type: 'CANCEL' });
+    card.host.remove(); overlay.clear(); if(cancelId)void send({ type: 'CANCEL',requestId:cancelId });
 });
 const placement = new CardPlacement(card.host);
 const review = new InPageReviewController(card, overlay, send);
@@ -52,6 +54,7 @@ card.onReviewLayers = () => {
     if (review.active) reviewLayerChange(); else arrows();
 };
 void send({ type: 'GET_OVERLAY_PREFERENCES' }).then(preferences => {
+    if (!runtime.available) return;
     card.heatmapToggle.checked = preferences?.heatmap !== false;
     card.arrowsToggle.checked = preferences?.arrows !== false;
     if (review.active) reviewLayerChange(); else arrows();
@@ -69,28 +72,31 @@ function arrows() {
 }
 card.onDetails = arrows;
 card.onReview = () => {
+    reviewNotice = '';
     card.status.textContent = 'Loading this completed game…';
     void send({ type: 'OPEN_REVIEW' }).then(response => {
+        if (!runtime.available || closed) return;
         if (response?.error) card.status.textContent = response.error;
         else if (isReviewSession(response?.session)) { invalidate('Starting review…'); review.start(response.session); void update(true); }
     });
 };
-let reviewUrl = '', reviewAvailable = false, reviewCheckedAt = 0;
+let reviewNotice = '';
+let reviewUrl = '', reviewCheckedAt = 0, checkingReview = false;
 async function reviewAvailability() {
-    if (closed || document.visibilityState !== 'visible') return;
-    if (review.active) { card.reviewButton.hidden = true; return; }
-    if (reviewUrl !== location.href) { reviewUrl = location.href; reviewAvailable = false; reviewCheckedAt = 0; }
-    const snapshot = readGameSnapshot();
-    if (!snapshot) { reviewAvailable = false; card.reviewButton.hidden = true; return; }
-    if (snapshot.completed) reviewAvailable = true;
-    card.reviewButton.hidden = !reviewAvailable;
-    if (!snapshot.completed && Date.now() - reviewCheckedAt > 2000) {
-        reviewCheckedAt = Date.now(); const capturedUrl = location.href;
-        const response = await send({ type: 'REVIEW_AVAILABILITY' });
-        if (location.href !== capturedUrl || closed) return;
-        reviewAvailable = response?.completed === true && response.url === capturedUrl;
-        card.reviewButton.hidden = !reviewAvailable;
-    }
+    if (closed || document.visibilityState !== 'visible' || review.active || checkingReview) return;
+    const page = location.href.split('#')[0];
+    if (reviewUrl !== page) { reviewUrl = page; reviewCheckedAt = 0; reviewNotice = ''; }
+    if (Date.now() - reviewCheckedAt < 2000) return;
+    reviewCheckedAt = Date.now(); checkingReview = true;
+    try {
+        const response = await send({type:'REVIEW_AVAILABILITY'});
+        if (closed || review.active || location.href.split('#')[0] !== page) return;
+        card.reviewButton.hidden = response?.completed !== true;
+        reviewNotice = response?.completed && response.error ? response.error : '';
+        if (isReviewSession(response?.session)) {
+            invalidate('Starting game review...'); review.start(response.session); void update(true);
+        } else if (response?.completed && response.error) card.status.textContent = response.error;
+    } finally { checkingReview = false; }
 }
 function attach(board: HTMLElement) {
     const lichess = location.hostname === 'lichess.org';
@@ -100,14 +106,15 @@ function attach(board: HTMLElement) {
     if (key !== publishedTheme) { publishedTheme = key; void send({ type: 'SITE_THEME', theme }); }
 }
 function invalidate(status: string) {
-    if (requestId) void send({ type: 'CANCEL' });
+    if (requestId) void send({ type: 'CANCEL',requestId });
     requestId = ''; signature = ''; text = ''; result = undefined; overlay.clear(); card.clear(status);
 }
 async function update(force = false) {
-    if (closed) return;
+    if (!runtime.available || closed) return;
     const updateRevision = ++revision;
     position = readPosition();
-    if (!position) { reportDiagnostic(diagnostic('SITE_ADAPTER_UNAVAILABLE', { site: location.hostname === 'lichess.org' ? 'lichess' : 'chesscom' })); review.update(undefined, undefined); invalidate('Open a study board to begin.'); card.host.remove(); return; }
+    // Home, account and history-list pages normally have no board.
+    if (!position) { review.update(undefined, undefined); invalidate('Open a study board to begin.'); card.host.remove(); return; }
     attach(position.board);
     void reviewAvailability();
     if (document.visibilityState !== 'visible') { review.update(undefined, undefined); invalidate('Paused while this tab is hidden.'); return; }
@@ -116,13 +123,14 @@ async function update(force = false) {
         const response = await send({ type: 'NATIVE_REVIEW_REQUEST' });
         if (closed || updateRevision !== revision) return;
         native = normalizeSnapshot(response?.snapshot);
+        if (native && review.session) native = bindCapturedPosition(review.session,native,position);
         position = readPosition(document, new URL(location.href), native?.fen, native);
         if (!position) { invalidate('Waiting for a board…'); return; }
     }
     if (review.active) { review.update(position, native); return; }
     const analysis = guidanceMode(new URL(location.href)) === 'analysis';
     card.layerControls.hidden = !analysis;
-    if (!analysis) { invalidate('Select Review with Kibitz to examine the played moves. Move suggestions are available on analysis boards.'); return; }
+    if (!analysis) { invalidate(reviewNotice || 'Finished games are reviewed automatically. You can also choose Review with Kibitz.'); return; }
     if (!position.allowed || !position.fen) { reportDiagnostic(diagnostic('UNSUPPORTED_BOARD_STATE')); invalidate(position.status); return; }
     const next = `${location.href}|${position.fen}`;
     if (next === signature && !force) { arrows(); return; }
@@ -132,15 +140,17 @@ async function update(force = false) {
     const response = await send({ type: 'ANALYSIS_REQUEST', requestId, fen: position.fen, orientation: position.orientation });
     if (response?.error && requestId === id) card.status.textContent = response.error;
 }
-chrome.runtime.onMessage.addListener((payload: unknown, sender) => {
-    if (!isBackgroundSender(sender) || !isContentMessage(payload)) return;
+const onMessage = (payload: unknown, sender: chrome.runtime.MessageSender) => {
+    if (!runtime.available || !isBackgroundSender(sender) || !isContentMessage(payload)) return;
     const message = payload;
+    if (message.type === 'REVIEW_STATE_CHANGED') { if (review.session?.id===message.sessionId) void review.syncState(); return; }
     if (message.type === 'REVIEW_CONTROL') { review.control(message); return; }
     if (message.type === 'REVIEW_LOADED') {
         closed = false; invalidate('Starting review…'); review.start(message.session); void update(true); return;
     }
     if (message.type.startsWith('REVIEW_')) {
         const event = message as ReviewEvent;
+        if (event.requestId.startsWith('sweep-')) return;
         // Keep final provider status behind the asynchronous position checks for
         // facts/text; otherwise a fast cached response can finish before its text.
         reviewEvents = reviewEvents.then(async () => {
@@ -149,7 +159,8 @@ chrome.runtime.onMessage.addListener((payload: unknown, sender) => {
                 const expectedUrl = location.href;
                 const response = await send({ type: 'NATIVE_REVIEW_REQUEST' });
                 if (closed || location.href !== expectedUrl || !review.active) return;
-                const native = normalizeSnapshot(response?.snapshot);
+                let native = normalizeSnapshot(response?.snapshot);
+                if (native && review.session && position) native = bindCapturedPosition(review.session,native,position);
                 position = readPosition(document, new URL(location.href), native?.fen, native);
                 review.update(position, native);
             }
@@ -158,7 +169,7 @@ chrome.runtime.onMessage.addListener((payload: unknown, sender) => {
         return;
     }
     if (message.type === 'REOPEN') { closed = false; void update(true); return; }
-    if (message.type === 'REFRESH') { review.refreshExplanations(); void update(true); return; }
+    if (message.type === 'REFRESH') { review.visibility(document.visibilityState==='visible'); review.refreshExplanations(); void update(true); return; }
     const event = message as AnalysisEvent;
     if (closed || event.requestId !== requestId || document.visibilityState !== 'visible') return;
     if (event.type === 'ENGINE_RESULT') {
@@ -181,10 +192,15 @@ chrome.runtime.onMessage.addListener((payload: unknown, sender) => {
         text += event.textDelta; card.explain(text);
         if (event.isComplete) card.status.textContent = '';
     }
-});
+};
+chrome.runtime.onMessage.addListener(onMessage);
 let timer: ReturnType<typeof setTimeout>;
-const schedule = () => { clearTimeout(timer); timer = setTimeout(() => { void update(); }, 250); };
+const schedule = () => {
+    if (!runtime.available) return;
+    clearTimeout(timer); timer = setTimeout(() => { void update(); }, 250);
+};
 const observer = new MutationObserver(mutations => {
+    if (!runtime.available) return;
     if (mutations.some(m => !card.host.contains(m.target) && m.target !== overlay.svg && !overlay.svg.contains(m.target))) {
         // Clear outdated recommendations immediately, before the debounce settles.
         if (mutations.some(m => position?.board.contains(m.target))) {
@@ -197,13 +213,17 @@ const observer = new MutationObserver(mutations => {
     }
 });
 observer.observe(document.documentElement, { subtree: true, childList: true, attributes: true, characterData: true });
-document.addEventListener('visibilitychange', () => { void update(true); });
+const onVisibility = () => { if (runtime.available) { review.visibility(document.visibilityState==='visible'); void update(true); } };
+document.addEventListener('visibilitychange', onVisibility);
 window.addEventListener('resize', schedule, { passive: true });
-window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', schedule);
+const colorScheme = window.matchMedia('(prefers-color-scheme: dark)');
+colorScheme.addEventListener('change', schedule);
 // Site panels can resize the board without resizing the browser window.
 let observedBoard: HTMLElement | undefined;
 const boardResize = new ResizeObserver(schedule);
-setInterval(() => {
+const heartbeat = setInterval(() => {
+    if (!runtime.available) return;
+    if (url !== location.href) { url = location.href; schedule(); }
     if (position?.board) void reviewAvailability();
     if (position?.board !== observedBoard) {
         boardResize.disconnect(); observedBoard = position?.board;
@@ -214,20 +234,36 @@ setInterval(() => {
     }
 }, 750);
 window.addEventListener('popstate', schedule);
-window.addEventListener('pagehide', () => { review.stop(true); placement.destroy(); overlay.destroy(); void send({ type: 'CANCEL' }); });
+let disposed = false;
+function dispose() {
+    if (disposed) return;
+    disposed = true; closed = true; revision++;
+    clearInterval(heartbeat); clearTimeout(timer);
+    observer.disconnect(); boardResize.disconnect();
+    document.removeEventListener('visibilitychange', onVisibility);
+    window.removeEventListener('resize', schedule);
+    window.removeEventListener('popstate', schedule);
+    window.removeEventListener('pagehide', dispose);
+    colorScheme.removeEventListener('change', schedule);
+    try { chrome.runtime.onMessage.removeListener(onMessage); } catch { /* Already unloaded. */ }
+    review.stop(true); placement.destroy(); overlay.destroy(); card.host.remove();
+    if(requestId)void send({ type: 'CANCEL',requestId });
+    requestId = ''; position = undefined; result = undefined;
+}
+window.addEventListener('pagehide', dispose);
+runtime.onInvalidated(dispose);
 // pushState does not emit popstate. A slow URL-only check covers SPA navigation.
 let url = location.href;
-setInterval(() => { if (url !== location.href) { url = location.href; schedule(); } }, 750);
 performance.mark('kibitz:content-init:end');
 performance.measure('kibitz:content-init', 'kibitz:content-init:start', 'kibitz:content-init:end');
 void (async () => {
-    // Restore only a session explicitly started earlier in this tab, and verify
-    // it against the current native board before any analysis or overlay.
+    // Restore a captured session for this game. Selected-move guidance still
+    // requires an independently verified native position.
     try {
         const response = await send({type:'GET_REVIEW_STATE'});
         if (response?.state?.active !== false && isReviewSession(response?.state?.session)) {
             const native = normalizeSnapshot((await send({type:'NATIVE_REVIEW_REQUEST'}))?.snapshot);
-            if (native && resolveReviewPly(response.state.session,native) !== undefined && !closed) {
+            if (native && (native.gameId===response.state.session.source?.gameId || response.state.session.source?.gameId==='study' && resolveReviewPly(response.state.session,native)!==undefined) && !closed) {
                 if (response.state.session.selectedPly!==resolveReviewPly(response.state.session,native)) await send({type:'NATIVE_REVIEW_NAVIGATE',direction:'select',ply:response.state.session.selectedPly});
                 review.start(response.state.session);
             }

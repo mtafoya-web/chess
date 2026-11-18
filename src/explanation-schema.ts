@@ -2,8 +2,8 @@
 export const EXPLANATION_SCHEMA = {
     type:'object', additionalProperties:false,
     properties:{
-        leadFactId:{type:'string',maxLength:120}, supportFactId:{type:'string',maxLength:120}, replyFactId:{type:'string',maxLength:120},
-        toneVariant:{type:'string',enum:['direct','encouraging','gentle']},
-        evidenceStepIds:{type:'array',items:{type:'integer',minimum:0},minItems:1,maxItems:10,uniqueItems:true},
-    }, required:['leadFactId','toneVariant'],
+        explanation:{type:'string',maxLength:4200}, lesson:{type:'string',maxLength:800},
+        evidenceIds:{type:'array',items:{type:'string'},minItems:1,maxItems:6},
+        lineRefs:{type:'array',maxItems:8,items:{type:'object',additionalProperties:false,properties:{branch:{type:'string'},step:{type:'integer',minimum:0}},required:['branch','step']}},
+    }, required:['explanation','lesson','evidenceIds'],
 };

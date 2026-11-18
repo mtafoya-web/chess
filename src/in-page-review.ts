@@ -1,3 +1,5 @@
+import {reviewProgress,canCoach} from './review-progress';
+import type {SearchProfile} from './review-scoring';
 import { DEFAULT_REVIEW_PREFERENCES, type ReviewPreferences } from './review-scoring';
 import { matchingGame, summarizeReview, coachingText, type ReviewState } from './review-model';
 import type { ReviewControl } from './messages';
@@ -13,6 +15,7 @@ import type { ReviewEvent, ReviewSession } from './review-types';
 import { buildBoardContext } from './board-context';
 import type { OpeningContext } from './opening-context';
 import { explanationStatus, type ExplanationProgress } from './explanation-state';
+import { providerFailureText } from './provider-failures';
 
 type Result = Extract<ReviewEvent, { type: 'REVIEW_RESULT' }>;
 type Send = (message: object) => Promise<any>;
@@ -29,11 +32,13 @@ export class InPageReviewController {
     private request?: { id: string; ply: number; ai: boolean; background: boolean; signature: string; explanation?: { text: string; provider?: string } };
     private selectedTimer?: ReturnType<typeof setTimeout>;
     private results = new Map<number, Result>();
+    private assessmentSignatures = new Map<number,string>();
     private insights = new WeakMap<Result, ReturnType<typeof reviewInsight>>();
     private aiText = new Map<string, { text: string; provider?: string; progress: ExplanationProgress; expires: number }>();
     private openings = new Map<number, OpeningContext>();
     private sweep = false;
-    private resumeSweep = false;
+    private syncingState = false;
+    private syncAgain = false;
     private preferences: ReviewPreferences = { ...DEFAULT_REVIEW_PREFERENCES };
     private explanationRequest?: NonNullable<InPageReviewController['request']>;
     private why = false;
@@ -49,13 +54,12 @@ export class InPageReviewController {
     constructor(private card: Card, private overlay: Overlay, private send: Send) {
         card.learning.onAction = (action, value) => { void this.learningAction(action, value); };
         card.onReviewAI = () => {
-            this.sweep = false; this.progress();
+             this.progress();
             if (this.verified() && this.selected !== undefined) this.analyze(this.selected, true);
         };
         card.onReviewSweep = () => {
-            this.sweep = !this.sweep; this.progress();
-            if (this.sweep) this.next();
-            else { this.cancel(); this.card.status.textContent = 'Whole-game analysis paused.'; }
+            if (!this.currentSession) return;
+            void this.send({type:'REVIEW_RUN_CONTROL',sessionId:this.currentSession.id,action:this.sweep?'pause':'resume'}).then(() => this.syncState());
         };
         card.onReviewStop = () => { this.stop(); this.onRequestRefresh(); };
         card.onReviewRetry = () => {
@@ -68,29 +72,55 @@ export class InPageReviewController {
     }
 
     start(session: ReviewSession) {
-        this.stop(); this.currentSession = session;
-        this.card.setReviewMode(true); this.card.clear('Use the website’s move controls to select a position.');
+        this.stop(true, true); this.currentSession = session;
+        this.card.setReviewMode(true); this.card.clear('Analyzing the completed game. Select a move using the website controls.');
+        void this.send({type:'REVIEW_RUN_CONTROL',sessionId:session.id,action:document.visibilityState==='hidden'?'hide':'show'}).then(() => this.syncState());
         this.onRequestRefresh();
-        void this.send({type:'GET_REVIEW_STATE'}).then(response => {
-            const state = response?.state as ReviewState | undefined;
-            if (!state || this.currentSession?.id !== session.id || state.session.id !== session.id || !matchingGame(session,state.session)) return;
-            this.preferences={...DEFAULT_REVIEW_PREFERENCES,...state.preferences};
-            for (const a of state.assessments) if (!a.pendingConfirmation && !this.results.has(a.ply)) this.results.set(a.ply,{...a,type:'REVIEW_RESULT',sessionId:session.id,requestId:`restored:${a.ply}`,tabId:session.source?.tabId??-1});
-            this.sweep=state.assessments.filter(a=>a.ply>0&&!a.pendingConfirmation).length<session.moves.length;
-            this.render(); this.progress(); this.next();
-        }).catch(()=>{});
+    }
+
+    /** Results can arrive while the website has no verifiable selected position. */
+    async syncState() {
+        if (!this.currentSession) return;
+        if (this.syncingState) { this.syncAgain = true; return; }
+        const id = this.currentSession.id;
+        this.syncingState = true;
+        try {
+            const response = await this.send({type:'GET_REVIEW_STATE'}), state = response?.state as ReviewState | undefined;
+            if (!state || this.currentSession?.id !== id || state.session.id !== id || !matchingGame(this.currentSession,state.session)) return;
+            if (state.active === false) { this.stop(true,true); this.onRequestRefresh(); return; }
+            let redraw = this.preferences.level !== state.preferences.level;
+            this.preferences = {...DEFAULT_REVIEW_PREFERENCES,...state.preferences}; this.sweep = state.running;
+            for (const assessment of state.assessments) {
+                const key = JSON.stringify(assessment);
+                if (this.assessmentSignatures.get(assessment.ply)===key) continue;
+                this.assessmentSignatures.set(assessment.ply,key);
+                redraw ||= assessment.ply===this.selected;
+                const previous = this.results.get(assessment.ply);
+                this.results.set(assessment.ply,{type:'REVIEW_RESULT',sessionId:id,requestId:previous?.requestId??`restored:${assessment.ply}`,tabId:this.currentSession.source?.tabId??-1,...assessment});
+                if (assessment.opening) this.openings.set(assessment.ply,assessment.opening);
+            }
+            this.progress(); if (redraw) this.render();
+            if (state.runError) this.card.status.textContent = state.runError;
+            else if (state.runStatus === 'complete' && !this.request && !this.explanationRequest) this.card.status.textContent = 'Game review complete. Browse the moves, key moments, and overview.';
+        } finally {
+            this.syncingState = false;
+            if (this.syncAgain) { this.syncAgain = false; void this.syncState(); }
+        }
+    }
+
+    visibility(visible: boolean) {
+        if (this.currentSession) void this.send({type:'REVIEW_RUN_CONTROL',sessionId:this.currentSession.id,action:visible?'show':'hide'});
     }
 
     update(position: Position | undefined, snapshot: NativeReviewSnapshot | undefined) {
         if (!this.active) return;
-        if (snapshot && this.gameReplaced(snapshot)) { this.stop(); this.onRequestRefresh(); return; }
+        if (snapshot && this.gameReplaced(snapshot)) { this.stop(true); this.onRequestRefresh(); return; }
         this.position = position; this.snapshot = snapshot;
         const ply = this.currentSession && snapshot ? resolveReviewPly(this.currentSession, snapshot) : undefined;
         if (ply === undefined || !position?.allowed || !position.fen || position.fen !== snapshot?.fen || !this.visibleBoard(position, snapshot)) {
-            this.invalidate('Waiting for the selected move and board to match.'); return;
+            this.invalidate(this.sweep ? 'Analyzing the game. Select a mainline move on the website to see its explanation.' : 'Select a mainline move on the website to see its explanation.'); return;
         }
         this.selected = ply; this.currentSession!.selectedPly = ply;
-        if (this.resumeSweep) { this.sweep = true; this.resumeSweep = false; }
         const signature = `${this.currentSession!.id}|${ply}|${snapshot.path ?? ''}|${position.fen}`;
         if (this.practice) {
             if (ply !== this.practice.move.ply && ply !== this.practice.move.ply-1) this.endPractice();
@@ -113,7 +143,6 @@ export class InPageReviewController {
                 this.card.status.textContent = this.failedSelection.text; this.card.reviewRetry.hidden = false;
             } else if (this.teaching) this.draw();
             else if (!this.cachedExplanation()) this.scheduleSelected(ply);
-            else if (this.sweep) this.next();
         } else this.draw();
     }
 
@@ -143,7 +172,7 @@ export class InPageReviewController {
         if (event.type === 'REVIEW_ENGINE_COMPLETE') {
             if (event.ply!==request.ply) return;
             if (this.request?.id===request.id) { if (request.ai) this.explanationRequest=request;this.request=undefined; }
-            this.next();return;
+            return;
         }
         if (event.type === 'REVIEW_RESULT') {
             if (event.ply !== request.ply) return;
@@ -152,7 +181,7 @@ export class InPageReviewController {
             this.results.set(event.ply, event); this.progress();
             if (event.ply === this.selected) this.render();
             if (event.pendingConfirmation && event.ply===this.selected) this.card.status.textContent='Preliminary feedback is ready. Stockfish is checking it more deeply.';
-            if (!request.ai && !event.pendingConfirmation && this.request?.id===request.id) { this.request = undefined; this.next(); }
+            if (!request.ai && !event.pendingConfirmation && this.request?.id===request.id) { this.request = undefined;  }
         } else if (event.type === 'REVIEW_TEXT') {
             request.explanation = { text: event.text, provider: event.provider };
             if (request.ply === this.selected && !this.practice && !this.results.get(request.ply)?.feedback?.provisional) this.card.showReviewAI(event.text, event.provider);
@@ -160,7 +189,10 @@ export class InPageReviewController {
         } else if (event.type === 'REVIEW_EXPLANATION_STATE') {
             const expectedFen = request.ply ? this.currentSession.moves[request.ply - 1]?.afterFen : this.currentSession.initialFen;
             if (event.ply !== request.ply || event.fen !== expectedFen) return;
-            if (request.ply === this.selected) this.card.status.textContent = explanationStatus(event);
+            if (request.ply === this.selected) {
+                this.card.reviewExplanationStatus.textContent = event.state==='ready' ? '' : explanationStatus(event);
+                if(event.attempts?.length)this.card.reviewAIText.textContent=[this.card.reviewAIText.textContent,event.attempts.map(providerFailureText).join(' ')].filter(Boolean).join(' ');
+            }
             if (event.state === 'pending') { this.card.reviewAI.disabled = true; return; }
             if (event.state === 'ready' && request.explanation) {
                 this.aiText.delete(request.signature);
@@ -173,12 +205,12 @@ export class InPageReviewController {
                 this.failedSelection = { signature: this.signature, text: explanationStatus(event) };
                 this.signature = ''; this.card.reviewRetry.hidden = false;
             }
-            this.next();
+
         } else if (event.type === 'REVIEW_ERROR') {
             if (this.practice) {
                 this.request=undefined;this.card.learning.setPending(false);this.card.learning.message('Your answer could not be checked. Retry it or return to the game.');return;
             }
-            this.request = undefined; this.sweep = false; this.progress();
+            this.request = undefined;  this.progress();
             const text = this.results.has(this.selected!) ? 'Stockfish feedback is ready. Additional analysis is unavailable.' : event.text;
             if (!request.background) {
                 this.failedSelection = { signature: this.signature, text }; this.signature = '';
@@ -187,7 +219,8 @@ export class InPageReviewController {
             this.card.reviewAI.disabled = !this.results.get(this.selected!)?.feedback;
             this.card.status.textContent = text;
         } else if ('text' in event && !request.background) {
-            this.card.status.textContent = event.text;
+            if(request.ai)this.card.reviewExplanationStatus.textContent='Preparing an explanation…';
+            else this.card.status.textContent = event.text;
         }
     }
 
@@ -202,32 +235,38 @@ export class InPageReviewController {
     }
 
     private scheduleSelected(ply: number) {
-        this.card.status.textContent = 'Preparing an AI explanation…';
+        this.card.status.textContent = this.results.has(ply) ? '' : 'Checking this move…';
         this.selectedTimer = setTimeout(() => {
             this.selectedTimer = undefined;
-            if (this.verified() && this.selected === ply) this.analyze(ply);
+            if (this.verified() && this.selected === ply) {
+                const cached = this.results.get(ply);
+                if (!cached) this.analyze(ply,false,false,'quick');
+                else this.analyze(ply,true,false,cached.profile==='quick'&&cached.refinement!=='pending'?'quick':'standard');
+            }
         }, 180);
     }
 
-    stop(preserve = false) {
-        if (this.currentSession) void this.send({type:'REVIEW_VIEW',sessionId:this.currentSession.id,ply:this.selected??0,running:false,active:preserve}).catch(()=>{});
+    stop(preserve = false, switching = false) {
+        if (this.currentSession && !switching) {
+            void this.send({type:'REVIEW_RUN_CONTROL',sessionId:this.currentSession.id,action:preserve?'hide':'stop'});
+        }
         this.cancel(); this.currentSession = undefined; this.position = undefined; this.snapshot = undefined;
-        this.selected = undefined; this.signature = ''; this.sweep = false; this.resumeSweep = false; this.results.clear(); this.aiText.clear(); this.openings.clear();
+        this.selected = undefined; this.signature = ''; this.sweep = false; this.results.clear(); this.assessmentSignatures.clear(); this.aiText.clear(); this.openings.clear();
         this.failedSelection = undefined; this.retrySelected = false;this.teaching=undefined;this.practice=undefined;this.card.learning.stop();this.card.host.removeAttribute('data-practice');this.publishedView='';
         this.overlay.clear(); this.card.setReviewIssues([]); this.card.setReviewMode(false); this.card.clear('Review stopped.');
     }
 
     private cancel(explanations = true) {
         clearTimeout(this.selectedTimer); this.selectedTimer = undefined;
-        if (this.request || explanations && this.explanationRequest) void this.send({ type: 'CANCEL' }).catch(() => {});
+        if (this.request) void this.send({type:'CANCEL',requestId:this.request.id}).catch(()=>{});
+        if (explanations && this.explanationRequest) void this.send({type:'CANCEL',requestId:this.explanationRequest.id}).catch(()=>{});
         this.request = undefined;
         if (explanations) this.explanationRequest=undefined;
         this.card.learning.setPending(false);
     }
 
     private invalidate(text: string) {
-        if (document.visibilityState === 'hidden') this.resumeSweep ||= this.sweep;
-        this.cancel(); this.signature = ''; this.selected = undefined; this.sweep = false;
+        this.cancel(); this.signature = ''; this.selected = undefined;
         this.overlay.clear(); this.card.clear(text); this.progress();
     }
 
@@ -237,15 +276,14 @@ export class InPageReviewController {
 
     private gameReplaced(snapshot: NativeReviewSnapshot) {
         const source = this.currentSession?.source;
-        if (!source || !snapshot.allowed || snapshot.url !== location.href) return false;
+        if (!source || snapshot.url !== location.href) return false;
+        if (!snapshot.allowed && document.querySelector('.rclock.running,.clock-component.clock-player-turn')) return true;
         try {
             const selected = new URL(snapshot.url), original = new URL(source.url);
             if (selected.protocol !== 'https:') return false;
             if (selected.hostname !== original.hostname) return true;
             if (snapshot.gameId) {
-                const id = selected.hostname === 'lichess.org' ? /^\/([a-zA-Z0-9]{8})(?:[a-zA-Z0-9]{4})?(?:\/(?:white|black))?\/?$/.exec(selected.pathname)?.[1]
-                    : /^\/(?:game\/(?:live|daily)|live\/game|analysis\/game\/(?:live|daily))\/(\d+)(?:\/|$)/.exec(selected.pathname)?.[1];
-                return id === snapshot.gameId && snapshot.gameId !== source.gameId;
+                return snapshot.gameId !== source.gameId;
             }
             return source.gameId === 'study' && selected.pathname !== original.pathname;
         } catch { return false; }
@@ -255,7 +293,7 @@ export class InPageReviewController {
         return !!this.position && !!this.snapshot && this.selected !== undefined && !!this.currentSession && this.position.fen === this.snapshot.fen && resolveReviewPly(this.currentSession, this.snapshot) === this.selected && this.visibleBoard(this.position, this.snapshot);
     }
 
-    private analyze(ply: number, ai = true, background = false, profile: 'standard'|'confirm' = 'standard') {
+    private analyze(ply: number, ai = true, background = false, profile: SearchProfile = this.results.get(ply)?.profile==='quick'&&this.results.get(ply)?.refinement!=='pending'?'quick':'standard') {
         if (!this.currentSession || !this.verified()) return;
         this.cancel(!background);
         // A user action can retry directly after an error, before another update.
@@ -265,21 +303,17 @@ export class InPageReviewController {
         if (!background) { this.failedSelection = undefined; this.card.reviewRetry.hidden = true; }
         const session = this.currentSession;
         if (ai) this.card.reviewAI.disabled = true;
-        if (!background) this.card.status.textContent = background ? `Analyzing move ${ply} of ${session.moves.length}…` : ai ? 'Preparing an AI explanation…' : 'Stockfish is checking this selected move…';
-        void this.send({ type: 'REVIEW_ANALYZE', sessionId: session.id, requestId: id, initialFen: session.initialFen, moves: session.moves.map(move => move.uci), ply, ai, background, ...(profile==='confirm'?{profile}: {}) }).then(response => {
+        if (!background) {
+            this.card.status.textContent = this.results.has(ply) ? '' : 'Checking this move…';
+            this.card.reviewExplanationStatus.textContent = ai ? 'Preparing an explanation…' : '';
+        }
+        void this.send({ type: 'REVIEW_ANALYZE', sessionId: session.id, requestId: id, initialFen: session.initialFen, moves: session.moves.map(move => move.uci), ply, ai, background, profile }).then(response => {
             if (this.request?.id !== id || !response?.error) return;
             this.handle({ type: 'REVIEW_ERROR', sessionId: session.id, requestId: id, tabId: session.source?.tabId ?? -1, text: response.error });
         }).catch(() => {
             if (this.request?.id !== id) return;
             this.handle({ type: 'REVIEW_ERROR', sessionId: session.id, requestId: id, tabId: session.source?.tabId ?? -1, text: 'Extension unavailable. Refresh this page.' });
         });
-    }
-
-    private next() {
-        if (!this.sweep || this.practice || this.request || this.selectedTimer || !this.currentSession || !this.verified()) return;
-        const next = this.currentSession.moves.find(move => !this.results.has(move.ply));
-        if (next) this.analyze(next.ply, false, true);
-        else { this.sweep = false; this.progress(); this.card.reviewIssues.open = this.card.reviewIssues.querySelectorAll('li').length > 0; this.card.status.textContent = 'Game review complete. Open Moves to revisit to examine inaccuracies and mistakes.'; }
     }
 
     private render() {
@@ -294,7 +328,7 @@ export class InPageReviewController {
         const result = this.results.get(this.selected!);
         this.card.learning.update(this.currentSession!.moves[this.selected!-1],result,this.preferences);
         if (result) {
-            this.card.showReview(result.after, result.feedback, result.before, this.currentSession!.moves[this.selected! - 1], result.feedback ? this.insight(result) : undefined);
+            this.card.showReview(result.after, result.feedback, result.before, this.currentSession!.moves[this.selected! - 1], result.feedback && canCoach(result) ? this.insight(result) : undefined);
             const reviewedMove=this.currentSession!.moves[this.selected!-1];
             if (reviewedMove) this.card.explanation.textContent=coachingText(reviewedMove,result,this.preferences,this.currentSession);
             this.card.reviewCueExplanation.hidden=!this.why;
@@ -302,15 +336,16 @@ export class InPageReviewController {
             this.card.showPositionFacts(buildBoardContext(this.position!.fen!, { sessionId: this.currentSession!.id, initialFen: this.currentSession!.initialFen, moves: this.currentSession!.moves.map(move => move.uci), ply: this.selected! }));
             this.card.showOpening(this.openings.get(this.selected!));
             const ai = this.cachedExplanation();
-            if (ai && !result.feedback?.provisional) { this.card.showReviewAI(ai.text, ai.provider); this.card.status.textContent = explanationStatus(ai.progress); }
+            if (ai && !result.feedback?.provisional) { this.card.showReviewAI(ai.text, ai.provider); this.card.reviewExplanationStatus.textContent = ''; }
             if (this.request?.ai && this.request.ply === this.selected) this.card.reviewAI.disabled = true;
         }
         this.draw(); this.onRequestRefresh();
     }
 
     private progress() {
-        this.card.setReviewProgress([...this.results.values()].filter(a => a.ply > 0 && !a.pendingConfirmation).length, this.currentSession?.moves.length ?? 0, this.sweep);
-        const issues = [...this.results.values()].filter(result => !result.feedback?.provisional && reviewProblem(result.feedback?.label)).sort((a,b)=>a.ply-b.ply).flatMap(result => {
+        const progress = reviewProgress(this.currentSession?.moves.length??0,[...this.results.values()]);
+        this.card.setReviewProgress(progress.scanned,progress.total,this.sweep,progress.text+(!this.sweep&&!progress.complete?' - paused':''));
+        const issues = [...this.results.values()].filter(result => canCoach(result) && reviewProblem(result.feedback?.label)).sort((a,b)=>a.ply-b.ply).flatMap(result => {
             const move=this.currentSession?.moves[result.ply-1];
             return move && result.feedback ? [{ply:result.ply,name:`${move.beforeFen.split(' ')[5]}${move.color==='w'?'.':'...'} ${readableMove(move.beforeFen,move.uci)}`,label:result.feedback.label,summary:this.insight(result).summary}] : [];
         });
@@ -328,12 +363,12 @@ export class InPageReviewController {
     private async selectIssue(ply: number) {
         if (!this.verified() || !this.currentSession || !this.results.has(ply)) return;
         const session=this.currentSession.id, url=location.href;
-        this.sweep=false; this.cancel(); this.progress(); this.overlay.clear();
+         this.cancel(); this.progress(); this.overlay.clear();
         this.card.status.textContent='Selecting the played move on the website...';
         const response=await this.send({type:'NATIVE_REVIEW_NAVIGATE',direction:'select',ply}).catch(()=>({ok:false}));
         if(this.currentSession?.id!==session || location.href!==url)return;
         this.onRequestRefresh();
-        if(!response?.ok)this.card.status.textContent="Use the website's move list to select this played move.";
+        if(!response?.ok)this.card.status.textContent=this.navigationHelp("Use the website's move list to select this played move.");
     }
 
     private insight(result: Result) {
@@ -358,13 +393,18 @@ export class InPageReviewController {
         void this.learningAction(command.action as ReviewAction);
     }
     private async navigate(ply: number) {
-        if (!this.verified() || !this.currentSession || ply<0 || ply>this.currentSession.moves.length) return false;
+        if (!this.currentSession || ply<0 || ply>this.currentSession.moves.length) return false;
+        if (!this.verified()) {this.card.status.textContent="Use the website's move controls to select a mainline position before navigating from Kibitz.";return false;}
         const id=this.currentSession.id,url=location.href;
         const response=await this.send({type:'NATIVE_REVIEW_NAVIGATE',direction:'select',ply}).catch(()=>({ok:false}));
         if (this.currentSession?.id!==id || location.href!==url) return false;
         this.onRequestRefresh();
-        if (!response?.ok) this.card.status.textContent = `Use the website's move controls to select ${ply === 0 ? 'the starting position' : `move ${Math.ceil(ply/2)}${ply%2?'.':'...'}`}.`;
+        if (!response?.ok) this.card.status.textContent = this.navigationHelp(`Use the website's move controls to select ${ply === 0 ? 'the starting position' : `move ${Math.ceil(ply/2)}${ply%2?'.':'...'}`}.`);
         return response?.ok===true;
+    }
+    private navigationHelp(fallback: string) {
+        return location.hostname==='lichess.org' && document.querySelector('.round__app')
+            ? 'Choose Analysis board on Lichess to continue reviewing this game.' : fallback;
     }
     private recordAttempt(outcome: 'solved'|'hinted'|'revealed'|'skipped'|'missed') {
         if (!this.currentSession || !this.practice) return;
@@ -399,25 +439,30 @@ export class InPageReviewController {
             const moments=summarizeReview(this.state).moments;
             const ply=moments.find(p=>p>(this.selected??0))??moments[0];
             if(ply===undefined){this.card.status.textContent=this.results.size>=this.currentSession.moves.length?'No confirmed key moments for this selection. Browse the game or change the player filter.':'Key moments will appear as analysis finishes.';return;}
-            this.sweep=false;this.cancel();if(!await this.navigate(ply))this.card.status.textContent=`Use the website's move list to select move ${Math.ceil(ply/2)}${ply%2?'.':'...'}.`;return;
+            this.cancel();if(!await this.navigate(ply))this.card.status.textContent=this.navigationHelp(`Use the website's move list to select move ${Math.ceil(ply/2)}${ply%2?'.':'...'}.`);return;
         }
-        if (action==='why') {this.why=!this.why;this.card.learning.element.querySelector('[data-action="why"]')!.setAttribute('aria-pressed',String(this.why));this.render();return;}
-        if (action==='deeper' && this.selected!==undefined) {this.sweep=false;this.analyze(this.selected,true,false,'confirm');return;}
+        if (action==='why') {
+            const assessment=this.results.get(this.selected!);
+            if(!assessment?.feedback || !canCoach(assessment) || !this.insight(assessment).cues.length)return;
+            this.why=!this.why;this.card.learning.element.querySelector('[data-action="why"]')!.setAttribute('aria-pressed',String(this.why));this.render();return;
+        }
+        if (action==='deeper' && this.selected!==undefined) {this.analyze(this.selected,true,false,'confirm');return;}
         if (action==='better') {
             if(this.teaching){const ply=this.teaching.ply;this.teaching=undefined;await this.navigate(ply);this.onRequestRefresh();return;}
             const a=this.results.get(this.selected!),best=a?.before?.candidates[0];
             if(!best || this.selected===undefined)return;
-            this.sweep=false;this.cancel();this.teaching={ply:this.selected,uci:best.uci,san:best.san,pv:best.pv};
-            if(!await this.navigate(this.selected-1)){this.teaching=undefined;this.card.details.open=true;this.card.status.textContent="The better move is in Details. Use the website's controls to view the previous position; no arrow was drawn.";}return;
+            this.cancel();this.teaching={ply:this.selected,uci:best.uci,san:best.san,pv:best.pv};
+            if(!await this.navigate(this.selected-1)){this.teaching=undefined;this.card.details.open=true;this.card.status.textContent=this.navigationHelp("The better move is in Details. Use the website's controls to view the previous position; no arrow was drawn.");}return;
         }
         if (action==='practice' && this.selected && this.verified()) {
             const assessment=this.results.get(this.selected);const move=this.currentSession.moves[this.selected-1];
-            if(!assessment || !move || assessment.feedback?.provisional || !reviewProblem(assessment.feedback?.label))return;
-            this.sweep=false;this.cancel();this.teaching=undefined;
+            if(!assessment || !move || !canCoach(assessment) || !reviewProblem(assessment.feedback?.label))return;
+            void this.send({type:'REVIEW_RUN_CONTROL',sessionId:this.currentSession.id,action:'pause'});
+            this.cancel();this.teaching=undefined;
             this.card.learning.update(move,assessment,this.preferences);this.card.learning.resetForm();
             if(!this.card.learning.start())return;
             this.practice={move,assessment,revealed:false,solved:false};this.card.host.setAttribute('data-practice','');this.overlay.clear();this.progress();
-            if(!await this.navigate(move.ply-1))this.card.learning.boardNote("Use the website's previous-move control to view the exercise position. Your answer is checked from before the played move.");return;
+            if(!await this.navigate(move.ply-1))this.card.learning.boardNote(this.navigationHelp("Use the website's previous-move control to view the exercise position. Your answer is checked from before the played move."));return;
         }
     }
 
@@ -433,7 +478,7 @@ export class InPageReviewController {
         const feedback=result.feedback, problem=reviewProblem(feedback?.label);
         const marker=move && feedback ? {square:move.uci.slice(2,4),label:reviewLabel(feedback.label),grade:feedback.provisional || feedback.label==='Review' ? 'unknown' as const : problem ?? 'good' as const} : undefined;
         const reviewCues: import('./overlay-model').ReviewCue[]=[];
-        if(move && feedback && problem && !feedback.provisional){
+        if(move && feedback && problem && canCoach(result)){
             reviewCues.push(...this.insight(result).cues.filter(c=>c.kind!=='consequence'||this.why));
         }
         this.overlay.setLayers(this.position!.board, this.position!.orientation, { heatmap:[], arrows:[], marker:this.preferences.visuals?marker:undefined, reviewCues:this.preferences.visuals?reviewCues:[] });

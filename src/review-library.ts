@@ -50,6 +50,10 @@ export class ReviewLibrary {
             await chrome.storage.local.set({ [KEY]: entries });
         });
     }
+    async isDeleted(session: ReviewSession): Promise<boolean> {
+        const value = (await chrome.storage.local.get(DELETED))[DELETED];
+        return Array.isArray(value) && value.includes(reviewFingerprint(session));
+    }
     allow(session: ReviewSession): Promise<void> { return this.transact(async () => {
         const deleted = (await chrome.storage.local.get(DELETED))[DELETED];
         if (Array.isArray(deleted)) await chrome.storage.local.set({[DELETED]:deleted.filter(key=>key!==reviewFingerprint(session))});
@@ -61,6 +65,8 @@ export class ReviewLibrary {
     }); }
 }
 export function recordAssessment(state: ReviewState, assessment: MoveAssessment) {
-    state.assessments = [...state.assessments.filter(a => a.ply !== assessment.ply), { ply: assessment.ply, before: assessment.before, after: assessment.after, feedback: assessment.feedback, pendingConfirmation:assessment.pendingConfirmation, opening:assessment.opening }]; state.updatedAt = Date.now();
+    const previous = state.assessments.find(a=>a.ply===assessment.ply);
+    if (assessment.profile==='quick' && previous && previous.profile!=='quick' && !previous.pendingConfirmation) return;
+    state.assessments = [...state.assessments.filter(a => a.ply !== assessment.ply), { ply: assessment.ply, before: assessment.before, after: assessment.after, feedback: assessment.feedback, profile:assessment.profile,refinement:assessment.refinement,pendingConfirmation:assessment.pendingConfirmation, opening:assessment.opening }]; state.updatedAt = Date.now();
 }
 export function recordPractice(state: ReviewState, attempt: PracticeRecord) { state.attempts.push(attempt); state.attempts = state.attempts.slice(-500); state.updatedAt = Date.now(); }

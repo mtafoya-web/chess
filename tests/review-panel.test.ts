@@ -41,3 +41,15 @@ it('offers an explicit resume after exit and a deliberate history-clear action',
     const clear=document.getElementById('clear-history')!;clear.click();expect(send.mock.calls.some(([m])=>m.type==='DELETE_LEARNING_HISTORY')).toBe(false);clear.click();await vi.advanceTimersByTimeAsync(0);
     expect(send).toHaveBeenCalledWith({type:'DELETE_LEARNING_HISTORY'});
 });
+
+it('keeps the existing review flow primary and offers setup only when starting another game',async()=>{
+    await vi.advanceTimersByTimeAsync(0);
+    expect(document.querySelector<HTMLElement>('.start')!.hidden).toBe(true);
+    const buttons=[...document.querySelectorAll<HTMLButtonElement>('#review-overview button')];
+    expect(buttons[0].textContent).toBe('Next key moment');buttons[0].click();
+    expect(send).toHaveBeenCalledWith({type:'REVIEW_CONTROL',sessionId:state.session.id,action:'next'});
+    expect(buttons.some(button=>button.textContent==='Analyze whole game')).toBe(false);
+    buttons.find(button=>button.textContent==='Review another game or import PGN')!.click();
+    expect(document.querySelector<HTMLElement>('.start')!.hidden).toBe(false);
+    expect(document.querySelector<HTMLDetailsElement>('#review-more-options')!.open).toBe(false);
+});

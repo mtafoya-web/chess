@@ -186,7 +186,7 @@ it('keeps factual feedback and emits a final safe status when review AI reaches 
     deliver(job(true));
     await vi.advanceTimersByTimeAsync(0);
     expect(events().filter(event => event.type === 'REVIEW_RESULT')).toHaveLength(1);
-    await vi.advanceTimersByTimeAsync(64999);
+    await vi.advanceTimersByTimeAsync(79999);
     expect(events().some(event => event.diagnostic?.code === 'EXPLANATION_TIMEOUT')).toBe(false);
     await vi.advanceTimersByTimeAsync(1);
     expect(events().at(-1)).toMatchObject({ type: 'REVIEW_EXPLANATION_STATE', state: 'failed', ply: 1 });
@@ -202,11 +202,11 @@ it('emits analysis results before optional book loading and supplies the matched
     const match=new Chess(fen);for(const uci of pv.split(' ').slice(0,4))match.move({from:uci.slice(0,2),to:uci.slice(2,4)});
     let resolve!:(value:Response)=>void;
     const fetcher=vi.fn(()=>new Promise<Response>(r=>{resolve=r;}));vi.stubGlobal('fetch',fetcher);
-    deliver({target:'offscreen',type:'ENGINE_START',fen,requestId:'sicilian',tabId:12,manual:true,settings:{...DEFAULT_SETTINGS,keys:{}}});
+    deliver({target:'offscreen',type:'ENGINE_START',fen,requestId:'sicilian',tabId:12,manual:true,level:'advanced',settings:{...DEFAULT_SETTINGS,keys:{}}});
     await vi.waitFor(()=>expect(events().some(e=>e.type==='ENGINE_RESULT')).toBe(true));
     expect(mocks.explain).not.toHaveBeenCalled();
     resolve(Response.json([['B34','Sicilian Defense: Accelerated Dragon, Modern Variation','',match.fen().split(' ').slice(0,4).join(' ')]]));
     await vi.waitFor(()=>expect(mocks.explain).toHaveBeenCalled());
-    expect(mocks.explain.mock.calls[0][6]).toMatchObject({mode:'analysis',analysisOpening:{pvPosition:{eco:'B34',step:3,source:'local-position-match'}}});
+    expect(mocks.explain.mock.calls[0][6]).toMatchObject({mode:'analysis',level:'advanced',analysisOpening:{pvPosition:{eco:'B34',step:3,source:'local-position-match'}}});
     expect(fetcher).toHaveBeenCalledTimes(1);
 });
