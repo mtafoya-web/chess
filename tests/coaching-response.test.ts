@@ -43,6 +43,34 @@ it('rejects fabricated evidence and branch references without promising prose tr
     ]) expect(validateCoachingResponse(JSON.stringify(value), catalog)).toBeUndefined();
 });
 
+it('rejects review prose that substitutes another piece or move identity', () => {
+    const board = new Chess();
+    playUci(board, 'e2e4'); playUci(board, 'd7d5'); playUci(board, 'd1f3');
+    const afterFen = board.fen();
+    const beforeFen = new Chess(DEFAULT_POSITION);
+    playUci(beforeFen, 'e2e4'); playUci(beforeFen, 'd7d5');
+    const history = { sessionId: 'queen-move', initialFen: DEFAULT_POSITION, moves: ['e2e4','d7d5','d1f3'], ply: 3 };
+    const before = evaluation([searched(beforeFen.fen(), 'd1f3', 0)]);
+    const after = evaluation([searched(afterFen, 'g8f6', -300)]);
+    const catalog = buildExplanationFacts(afterFen, after, {
+        summary: '', before, history, level: 'beginner', label: 'Blunder', lossCp: 300,
+    });
+    const wrongPiece = {
+        ...prose,
+        explanation: 'The knight on F3 moved to F7 and lost material. The black knight can then take on F7.',
+        evidenceIds: ['played.move'],
+    };
+    expect(validateCoachingResponse(JSON.stringify(wrongPiece), catalog)).toBeUndefined();
+    const correctPiece = {
+        ...prose,
+        explanation: 'The queen moved from D1 to F3, changing the center and exposing useful lines. The black reply is a searched possibility, not a forced sequence.',
+        lesson: 'Check the piece, origin, and destination before interpreting a queen move.',
+        evidenceIds: ['played.move'],
+        lineRefs: undefined,
+    };
+    expect(validateCoachingResponse(JSON.stringify(correctPiece), catalog)).toBeDefined();
+});
+
 it('separates played and preferred roots, handles black mover loss, and never converts mate or terminal scores to cp', () => {
     const board = new Chess(); playUci(board, 'e2e4');
     const beforeFen = board.fen(); playUci(board, 'd7d5');

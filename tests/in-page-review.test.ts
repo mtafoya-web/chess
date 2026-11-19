@@ -106,6 +106,23 @@ it('retries an AI fallback when a move is revisited and invalidates successful w
     expect(requests()).toHaveLength(5); expect(last().ai).toBe(true);
     expect(card.explanation.textContent).not.toBe('Validated AI wording.');
 });
+it('ignores AI text that arrives after the website selection changes', () => {
+    update(1);
+    result();
+    card.reviewAI.click();
+    const first = last();
+    result(first, {}, false);
+    update(2);
+    controller.handle({
+        type: 'REVIEW_TEXT',
+        sessionId: session.id,
+        requestId: first.requestId,
+        tabId: 1,
+        text: 'Text for the old white move.',
+        provider: 'Chrome AI',
+    });
+    expect(card.explanation.textContent).not.toBe('Text for the old white move.');
+});
 it('ignores status wording and mismatched completion events while an AI request remains pending', () => {
     update(1); result(); card.reviewAI.click(); result(last(),{},false); const selected = last();
     card.reviewSweep.click();

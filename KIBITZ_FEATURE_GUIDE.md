@@ -427,6 +427,7 @@ For release testing, verify both sites in light/dark themes, narrow and wide win
 
 Primary repository sources:
 
+- `AI_EXPLANATION_GUIDE.md`: how AI explanations are generated and how learning levels differ
 - `README.md`: installation, provider setup, workflows, privacy, architecture, and limitations
 - `TESTING.md`: current hands-on 1.2.3 release checklist
 - `docs/manual-testing.md`: detailed manual browser checkpoints

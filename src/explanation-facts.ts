@@ -72,7 +72,14 @@ export function buildExplanationFacts(fen: string, result: Evaluation, review?: 
         if (review?.level) insight.summary = coachingText(reviewedMove,{ply:played.ply,before:review.before,after:result,feedback},{...DEFAULT_REVIEW_PREFERENCES,level:review.level});
         reviewEvidence = insight.evidence;
         if (reviewEvidence && review?.history) reviewEvidence.verifiedHistory = {initialFen: review.history.initialFen, ply: review.history.ply, recentMoves: review.history.moves.slice(Math.max(0, review.history.ply - 12), review.history.ply)};
-        facts.push({ id: 'played.move', role: 'lead', branch, scope, evidence: 'legal-review-comparison', text: insight.summary, rank: 100, cause: insight.evidence?.causes[0]?.kind, evidenceSteps: insight.evidence?.causes[0]?.steps });
+        facts.push({
+            id: 'played.move', role: 'lead', branch, scope, evidence: 'legal-review-comparison',
+            text: `${insight.playedDescription} ${insight.summary}`.trim(),
+            meaning: insight.evaluationNote,
+            rank: 100,
+            cause: insight.evidence?.causes[0]?.kind,
+            evidenceSteps: insight.evidence?.causes[0]?.steps,
+        });
     } else if (context.terminal) {
         facts.push({ id: 'position.terminal', role: 'lead', branch, scope: 'current', evidence: 'chess-rules', text: `${context.terminal}. There is no continuation to suggest from this position.` });
     } else if (line[0]) {

@@ -13,6 +13,7 @@ export interface CoachingBranch {
 export interface CoachingContext {
     version: 1; level: LearningLevel; mode: 'review' | 'analysis'; fen: string;
     beforeFen?: string; playedMove?: string; preferredMove?: string;
+    selectedMove?: { uci: string; san: string; piece: 'pawn' | 'knight' | 'bishop' | 'rook' | 'queen' | 'king'; from: string; to: string; captured?: string; promotion?: string; castle?: 'king' | 'queen' };
     assessment?: { label?: string; lossCp?: number; provisional?: boolean; beforeWhite?: number; afterWhite?: number; beforeScore?: Evaluation['engineScore']; afterScore?: Evaluation['engineScore']; moverDeltaCp?: number };
     branches: CoachingBranch[];
 }
@@ -56,8 +57,21 @@ export function coachingContext(context: BoardContext, result: Evaluation, revie
         used.add(candidate.uci);
     }
     const cp = (value: Evaluation) => !value.engineScore || value.engineScore.kind === 'cp';
+    let selectedMove: CoachingContext['selectedMove'];
+    if (played) {
+        const board = new Chess(played.beforeFen);
+        const move = playUci(board, played.uci);
+        const pieceNames = { p: 'pawn', n: 'knight', b: 'bishop', r: 'rook', q: 'queen', k: 'king' } as const;
+        selectedMove = {
+            uci: played.uci, san: move.san, piece: pieceNames[move.piece],
+            from: move.from.toUpperCase(), to: move.to.toUpperCase(),
+            captured: move.captured ? pieceNames[move.captured] : undefined,
+            promotion: move.promotion ? pieceNames[move.promotion] : undefined,
+            castle: move.isKingsideCastle() ? 'king' : move.isQueensideCastle() ? 'queen' : undefined,
+        };
+    }
     return { version: 1, level: review?.level ?? 'beginner', mode: played ? 'review' : 'analysis', fen: context.fen,
-        beforeFen: played?.beforeFen, playedMove: played?.uci, preferredMove: before?.bestMove,
+        beforeFen: played?.beforeFen, playedMove: played?.uci, preferredMove: before?.bestMove, selectedMove,
         assessment: { label: review?.label, lossCp: cp(result) && (!review?.before || cp(review.before)) ? review?.lossCp : undefined, provisional: review?.provisional,
             beforeWhite: review?.before && cp(review.before) ? review.before.whiteScore : undefined, afterWhite: cp(result) ? result.whiteScore : undefined,
             beforeScore: review?.before?.engineScore, afterScore: result.engineScore,

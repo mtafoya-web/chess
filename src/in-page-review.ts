@@ -156,6 +156,8 @@ export class InPageReviewController {
         }
         const request = this.request?.id === event.requestId ? this.request : this.explanationRequest?.id === event.requestId ? this.explanationRequest : undefined;
         if (!this.currentSession || !request || event.sessionId !== this.currentSession.id) return;
+        if ((event.type === 'REVIEW_RESULT' || event.type === 'REVIEW_TEXT' || event.type === 'REVIEW_EXPLANATION_STATE')
+            && ('ply' in event) && (event.ply !== this.selected || !this.verified())) return;
         if (!this.verified()) { this.invalidate('Position changed. Waiting for the website’s selected move.'); return; }
         if (event.type === 'REVIEW_PRACTICE_RESULT') {
             if (!this.practice || event.ply!==this.practice.move.ply) return;
@@ -176,6 +178,7 @@ export class InPageReviewController {
         }
         if (event.type === 'REVIEW_RESULT') {
             if (event.ply !== request.ply) return;
+            if (event.ply !== this.selected || !this.verified()) return;
             if (event.opening) this.openings.set(event.ply, event.opening);
             if (event.ply === this.selected) { this.failedSelection = undefined; this.card.reviewRetry.hidden = true; }
             this.results.set(event.ply, event); this.progress();
@@ -183,6 +186,7 @@ export class InPageReviewController {
             if (event.pendingConfirmation && event.ply===this.selected) this.card.status.textContent='Preliminary feedback is ready. Stockfish is checking it more deeply.';
             if (!request.ai && !event.pendingConfirmation && this.request?.id===request.id) { this.request = undefined;  }
         } else if (event.type === 'REVIEW_TEXT') {
+            if (request.ply !== this.selected || !this.verified()) return;
             request.explanation = { text: event.text, provider: event.provider };
             if (request.ply === this.selected && !this.practice && !this.results.get(request.ply)?.feedback?.provisional) this.card.showReviewAI(event.text, event.provider);
             this.onRequestRefresh();
